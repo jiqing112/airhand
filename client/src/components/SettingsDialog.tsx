@@ -1,7 +1,8 @@
-// 设置对话框：标签栏的齿轮打开。
+// 设置对话框：标签栏的齿轮打开，左右结构——左边选节，右边是内容。
 //
 // * 服务器：中转服务器地址 + 证书指纹（桌面版才有——网页版的服务器就是当前页面的地址）；
 //   保存进 config.toml（Windows 安装版经命名管道交给服务写），改完"立即重启"让两个进程都拿到新地址；
+// * 局域网直连：监听开关 / 端口 / 连接密码（就是被控端的配对码）；
 // * 通用：界面语言；快捷键说明（网页版没有）；
 // * 关于：版本、本机名、配置文件路径（设置和我的设备都在里面）。
 import { useEffect, useState, type ReactNode } from "react";
@@ -11,11 +12,14 @@ import { store, useStore } from "../lib/store";
 import { IconCheck, IconCopy } from "./Icons";
 import { Logo } from "./Logo";
 
+type Section = "server" | "lan" | "general" | "about";
+
 export function SettingsDialog() {
   const t = useT();
-  const app = useStore((s) => s.app);
+  const open = useStore((s) => s.settings);
   const web = api.kind === "web";
   const close = () => store.setSettings(false);
+  const [section, setSection] = useState<Section>("server");
 
   // Esc 关闭
   useEffect(() => {
@@ -26,62 +30,50 @@ export function SettingsDialog() {
     return () => window.removeEventListener("keydown", esc);
   }, []);
 
+  // 只在齿轮打开时渲染：软件启动展示的是主页面
+  if (!open) return null;
+
+  const nav: { id: Section; label: string }[] = [
+    ...(!web
+      ? [
+          { id: "server" as Section, label: t("settings.server") },
+          { id: "lan" as Section, label: t("settings.lan") },
+        ]
+      : []),
+    { id: "general" as Section, label: t("settings.general") },
+    { id: "about" as Section, label: t("settings.about") },
+  ];
+  const current = nav.some((n) => n.id === section) ? section : nav[0].id;
+
   return (
     <div className="modal-backdrop" onPointerDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="modal settings" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <div className="set-head">
-          <div className="set-head-text">
-            <Logo size={26} />
-            <h3 id="settings-title">{t("settings.title")}</h3>
+      <div className="modal settings">
+        <nav className="set-nav">
+          <div className="set-nav-brand">
+            <Logo size={24} />
+            <span>{t("settings.title")}</span>
           </div>
-          <button className="icon-btn subtle" aria-label={t("settings.close")} onClick={close}>
-            <span aria-hidden>×</span>
-          </button>
-        </div>
-
-        {!web && <ServerSection />}
-        {!web && <LanSection />}
-
-        <div className="set-section">
-          <div className="set-title">{t("settings.general")}</div>
-          <div className="set-row">
-            <span className="am-label">{t("settings.language")}</span>
-            <LangSwitch />
+          {nav.map((n) => (
+            <button
+              key={n.id}
+              className={`set-nav-item ${current === n.id ? "active" : ""}`}
+              onClick={() => setSection(n.id)}
+            >
+              {n.label}
+            </button>
+          ))}
+        </nav>
+        <div className="set-body">
+          <div className="set-body-head">
+            <h3>{nav.find((n) => n.id === current)?.label}</h3>
+            <button className="icon-btn subtle" aria-label={t("settings.close")} onClick={close}>
+              <span aria-hidden>×</span>
+            </button>
           </div>
-          {!web && (
-            <details className="set-keys">
-              <summary className="am-label">{t("settings.shortcuts")}</summary>
-              <div className="am-keys">
-                <Keys keys={["Ctrl", "T"]}>{t("shortcut.newTab")}</Keys>
-                <Keys keys={["Ctrl", "W"]}>{t("shortcut.closeTab")}</Keys>
-                <Keys keys={["Ctrl", "Tab"]}>{t("shortcut.nextTab")}</Keys>
-                <Keys keys={["Ctrl", "1~9"]}>{t("shortcut.nthTab")}</Keys>
-                <Keys keys={["Ctrl", "Shift", "T"]}>{t("shortcut.reopen")}</Keys>
-              </div>
-            </details>
-          )}
-        </div>
-
-        <div className="set-section">
-          <div className="set-title">{t("settings.about")}</div>
-          <div className="set-about">
-            <div className="set-row">
-              <span>{t("settings.version")}</span>
-              <span className="mono">{app?.version ?? "—"}</span>
-            </div>
-            <div className="set-row">
-              <span>{t("settings.hostname")}</span>
-              <span className="ellipsis" title={app?.hostname}>
-                {app?.hostname || t("common.thisComputer")}
-              </span>
-            </div>
-            {app?.configPath && (
-              <div className="set-row">
-                <span>{t("settings.config")}</span>
-                <CopyButton text={app.configPath} />
-              </div>
-            )}
-          </div>
+          {current === "server" && !web && <ServerSection />}
+          {current === "lan" && !web && <LanSection />}
+          {current === "general" && <GeneralSection />}
+          {current === "about" && <AboutSection />}
         </div>
       </div>
     </div>
@@ -181,31 +173,6 @@ function ServerSection() {
   );
 }
 
-/** 复制配置文件的路径（复制不了就什么也不做，路径本身也可以选中复制） */
-function CopyButton({ text }: { text: string }) {
-  const t = useT();
-  const [done, setDone] = useState(false);
-  useEffect(() => {
-    if (!done) return;
-    const timer = window.setTimeout(() => setDone(false), 1500);
-    return () => clearTimeout(timer);
-  }, [done]);
-  return (
-    <button
-      className={`chip-btn ${done ? "done" : ""}`}
-      onClick={() =>
-        void navigator.clipboard?.writeText(text).then(
-          () => setDone(true),
-          () => {},
-        )
-      }
-    >
-      {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
-      <span>{t(done ? "menu.copied" : "menu.copy")}</span>
-    </button>
-  );
-}
-
 /** 局域网直连：监听开关 + 端口 + 连接密码（就是被控端的配对码，第一次连接要输入）。
  * 保存写 `[lan]` 和配对码，重启后被控端开始监听；托盘菜单会显示本机的局域网地址 */
 function LanSection() {
@@ -252,7 +219,6 @@ function LanSection() {
 
   return (
     <div className="set-section">
-      <div className="set-title">{t("settings.lan")}</div>
       <div className="set-row">
         <span className="am-label">{t("settings.lanListen")}</span>
         <input
@@ -313,6 +279,60 @@ function LanSection() {
   );
 }
 
+/** 通用：界面语言、快捷键（网页版没有快捷键——浏览器会拦） */
+function GeneralSection() {
+  const t = useT();
+  const web = api.kind === "web";
+  return (
+    <div className="set-section">
+      <div className="set-row">
+        <span className="am-label">{t("settings.language")}</span>
+        <LangSwitch />
+      </div>
+      {!web && (
+        <details className="set-keys">
+          <summary className="am-label">{t("settings.shortcuts")}</summary>
+          <div className="am-keys">
+            <Keys keys={["Ctrl", "T"]}>{t("shortcut.newTab")}</Keys>
+            <Keys keys={["Ctrl", "W"]}>{t("shortcut.closeTab")}</Keys>
+            <Keys keys={["Ctrl", "Tab"]}>{t("shortcut.nextTab")}</Keys>
+            <Keys keys={["Ctrl", "1~9"]}>{t("shortcut.nthTab")}</Keys>
+            <Keys keys={["Ctrl", "Shift", "T"]}>{t("shortcut.reopen")}</Keys>
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
+/** 关于：版本、本机名、配置文件（设置和我的设备都在里面） */
+function AboutSection() {
+  const t = useT();
+  const app = useStore((s) => s.app);
+  return (
+    <div className="set-section">
+      <div className="set-about">
+        <div className="set-row">
+          <span>{t("settings.version")}</span>
+          <span className="mono">{app?.version ?? "—"}</span>
+        </div>
+        <div className="set-row">
+          <span>{t("settings.hostname")}</span>
+          <span className="ellipsis" title={app?.hostname}>
+            {app?.hostname || t("common.thisComputer")}
+          </span>
+        </div>
+        {app?.configPath && (
+          <div className="set-row">
+            <span>{t("settings.config")}</span>
+            <CopyButton text={app.configPath} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Keys({ keys, children }: { keys: string[]; children: ReactNode }) {
   return (
     <>
@@ -347,5 +367,30 @@ export function LangSwitch() {
         </button>
       ))}
     </div>
+  );
+}
+
+/** 复制配置文件的路径（复制不了就什么也不做，路径本身也可以选中复制） */
+function CopyButton({ text }: { text: string }) {
+  const t = useT();
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const timer = window.setTimeout(() => setDone(false), 1500);
+    return () => clearTimeout(timer);
+  }, [done]);
+  return (
+    <button
+      className={`chip-btn ${done ? "done" : ""}`}
+      onClick={() =>
+        void navigator.clipboard?.writeText(text).then(
+          () => setDone(true),
+          () => {},
+        )
+      }
+    >
+      {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
+      <span>{t(done ? "menu.copied" : "menu.copy")}</span>
+    </button>
   );
 }

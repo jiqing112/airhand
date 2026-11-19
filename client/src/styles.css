@@ -1109,22 +1109,60 @@ kbd {
 
 /* ───────── 设置对话框（SettingsDialog.tsx）───────── */
 .modal.settings {
-  width: min(480px, calc(100% - 40px));
-  max-height: calc(100% - 80px);
-  overflow-y: auto;
+  width: min(720px, calc(100% - 40px));
+  height: min(520px, calc(100% - 80px));
+  padding: 0;
+  flex-direction: row;
+  overflow: hidden;
+}
+.set-nav {
+  width: 176px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-3);
+  border-right: 1px solid var(--edge);
+  background: var(--glass-1);
 }
-.set-head {
+.set-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-2) var(--sp-3);
+  font-weight: var(--fw-semibold);
+}
+.set-nav-item {
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-m);
+  color: var(--text-2);
+  font-size: var(--fs-s);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.set-nav-item:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.set-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: var(--fw-medium);
+}
+.set-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--sp-5) var(--sp-6);
+}
+.set-body-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--sp-2);
+  margin-bottom: var(--sp-4);
 }
-.set-head-text {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
+.set-body-head h3 {
+  font-size: var(--fs-l);
 }
 .set-section {
   margin-top: var(--sp-5);

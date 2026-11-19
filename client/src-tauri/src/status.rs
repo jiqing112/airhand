@@ -69,6 +69,9 @@ pub struct HostStatus {
     /// 配对过的控制端有几个
     #[serde(default)]
     pub paired: usize,
+    /// 局域网直连监听的实际地址（config.toml 的 `[lan]` 开着时；见 `airhand_proto::lan`）
+    #[serde(default)]
+    pub lan: Option<std::net::SocketAddr>,
 }
 
 impl Default for HostStatus {
@@ -80,6 +83,7 @@ impl Default for HostStatus {
             pairing: None,
             pairing_locked: false,
             paired: 0,
+            lan: None,
         }
     }
 }

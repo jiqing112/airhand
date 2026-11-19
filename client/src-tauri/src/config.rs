@@ -24,13 +24,16 @@
 //!   （`[[paired]]`）、控制台的身份密钥（`[controller]`，Windows 上每个账户一把），也都在这个文件里，
 //!   密钥和配对码加密保存（见 [`secret`]）。
 
+use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::Duration;
 
 use airhand_link::LinkConfig;
+use airhand_link::host::{Cidr, LanConfig};
 use airhand_link::net::{MemoryTrust, Trust, TrustStore, format_fingerprint, parse_fingerprint};
 use airhand_link::secure::{Access, Identity};
+use airhand_proto::lan::LAN_DEFAULT_PORT;
 use airhand_proto::signal::Reclaim;
 use anyhow::Result;
 use toml_edit::{DocumentMut, Item};
@@ -103,8 +106,35 @@ pub struct Settings {
     pub autostart: bool,
     /// 没配对过的控制端怎么办（`access`）：要配对码（默认），或者知道控制码就能连
     pub access: Access,
+    /// 局域网直连监听（`[lan]`，见 [`LanSettings`]）
+    pub lan: LanSettings,
     /// 服务器分配的控制码和加密过的密钥（`[code]`），用 [`Settings::code`] 解开
     saved_code: Option<(i64, String)>,
+}
+
+/// 局域网直连监听（`[lan]`）：没有中转服务器时，局域网里的控制端直接连本机的 `IP:端口`
+/// （协议见 `airhand_proto::lan`，安全机制和中转模式一样：没配对过的要配对码）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LanSettings {
+    /// 监听开关（`listen`）。关着（默认）就没有局域网直连
+    pub listen: bool,
+    /// 监听的 UDP 端口（`port`）
+    pub port: u16,
+    /// 监听哪块网卡（`bind`，写 IP，例如 `192.168.1.5`）；空 = 所有网卡
+    pub bind: String,
+    /// 只允许这些网段连入（`allow`，例如 `"192.168.1.0/24"`）；空 = 不限。进不进来还是端到端说了算
+    pub allow: Vec<String>,
+}
+
+impl Default for LanSettings {
+    fn default() -> Self {
+        Self {
+            listen: false,
+            port: LAN_DEFAULT_PORT,
+            bind: String::new(),
+            allow: Vec::new(),
+        }
+    }
 }
 
 impl Default for Settings {
@@ -114,6 +144,7 @@ impl Default for Settings {
             server_fp: DEFAULT_SERVER_FP.to_string(),
             autostart: true,
             access: Access::Pairing,
+            lan: LanSettings::default(),
             saved_code: None,
         }
     }
@@ -229,6 +260,24 @@ fn parse(text: &str) -> Result<Settings> {
             }
         };
     }
+    if let Some(t) = doc.get("lan").and_then(|v| v.as_table_like()) {
+        if let Some(v) = t.get("listen").and_then(|v| v.as_bool()) {
+            s.lan.listen = v;
+        }
+        if let Some(v) = t.get("port").and_then(|v| v.as_integer()) {
+            s.lan.port = u16::try_from(v).unwrap_or(LAN_DEFAULT_PORT);
+        }
+        if let Some(v) = t.get("bind").and_then(|v| v.as_str()) {
+            s.lan.bind = v.trim().to_string();
+        }
+        if let Some(v) = t.get("allow").and_then(|v| v.as_array()) {
+            s.lan.allow = v
+                .iter()
+                .filter_map(|i| i.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+    }
     if let Some(t) = doc.get("code").and_then(|v| v.as_table_like()) {
         let code = t.get("code").and_then(|v| v.as_integer());
         let secret = t.get("secret").and_then(|v| v.as_str());
@@ -240,8 +289,7 @@ fn parse(text: &str) -> Result<Settings> {
 }
 
 /// 连接中转服务器用的配置：服务器地址与指纹，加上本机名称（被控端和控制端共用）
-pub fn link() -> Arc<LinkConfig> {
-    static LINK: LazyLock<Arc<LinkConfig>> = LazyLock::new(|| {
+pub fn link() -> Arc<LinkConfig> {    static LINK: LazyLock<Arc<LinkConfig>> = LazyLock::new(|| {
         let s = settings();
         let (name, os) = crate::sysinfo::host_identity();
         Arc::new(
@@ -265,6 +313,43 @@ pub fn link() -> Arc<LinkConfig> {
 /// 是否配置了固定的服务器证书指纹（否则第一次连接时记下，控制台据此说明）
 pub fn pinned() -> bool {
     link().pinned()
+}
+
+/// 局域网直连监听的配置（`[lan]`，见 [`LanSettings`]）：没开就没有
+pub fn lan() -> Option<LanConfig> {
+    let s = &settings().lan;
+    if !s.listen {
+        return None;
+    }
+    let ip: IpAddr = if s.bind.is_empty() {
+        std::net::Ipv4Addr::UNSPECIFIED.into()
+    } else {
+        match s.bind.parse() {
+            Ok(ip) => ip,
+            Err(_) => {
+                error!(
+                    "config.toml: [lan] bind {:?} isn't an IP address, listening on all interfaces",
+                    s.bind
+                );
+                std::net::Ipv4Addr::UNSPECIFIED.into()
+            }
+        }
+    };
+    let allow = s
+        .allow
+        .iter()
+        .filter_map(|a| match Cidr::parse(a) {
+            Some(c) => Some(c),
+            None => {
+                warn!("config.toml: [lan] allow {a:?} isn't a network like 192.168.1.0/24, ignoring it");
+                None
+            }
+        })
+        .collect();
+    Some(LanConfig {
+        bind: SocketAddr::new(ip, s.port),
+        allow,
+    })
 }
 
 /// 第一次连上服务器时记下的证书指纹：存在 config.toml 的 `[server_trust]` 里（服务器地址 + 指纹，
@@ -370,6 +455,16 @@ fn template_windows(server: &str, fp: &str) -> String {
 # 开机自动启动：开机后被控端服务自动运行（登录之前也能被控制），登录后显示托盘图标。托盘菜单里也可以切换
 autostart = true
 
+# 局域网直连：没有中转服务器时（两端在同一个局域网里），控制端可以直接连本机的 IP 和端口（端口见下面的 port）。
+# 开着的话，没配对过的控制端连进来同样要配对码（托盘菜单里显示配对码），安全性不变。
+# allow 是允许连入的网段（例如 "192.168.1.0/24"），挡住不认识的人的连接请求；空着不限。
+# bind 是监听哪块网卡的 IP（例如 192.168.1.5）；空着是所有网卡。改完要重新启动 Airhand
+#[lan]
+#listen = false
+#port = 4433
+#bind = ""
+#allow = []
+
 # 控制码：第一次连上服务器时由服务器分配，之后一直使用同一个（重启、掉线、升级都不变）。
 # 托盘菜单"更换控制码"会换一个新的；删掉 code 和 secret 则下次启动时重新分配。
 # secret 是取回这个控制码的凭据，用 Windows DPAPI 加密过，只有这台电脑上的 Airhand 能解开
@@ -391,6 +486,16 @@ autostart = true
 # Start with Windows: the host service runs after boot (the computer can be controlled before anyone signs in),
 # and the tray icon shows up after signing in. Can also be changed in the tray menu
 autostart = true
+
+# LAN direct connections: without a relay server (both ends on the same network), controllers connect straight to this computer's IP and port (the port is `port` below).
+# Pairing is still required for controllers that haven't paired (the pairing code is in the tray menu); the security is the same.
+# `allow` lists the networks that may connect (e.g. "192.168.1.0/24"), blocking strangers' connection attempts; empty means everyone.
+# `bind` is the IP of the network adapter to listen on (e.g. 192.168.1.5); empty means all of them. Restart Airhand after editing
+#[lan]
+#listen = false
+#port = 4433
+#bind = ""
+#allow = []
 
 # Control code: assigned by the server the first time, then always the same (across restarts, disconnects and upgrades).
 # "Change control code" in the tray menu gets a new one; delete code and secret to get a new one at the next start.
@@ -427,6 +532,16 @@ fn template_user(server: &str, fp: &str) -> String {
 
 {access}
 
+# 局域网直连：没有中转服务器时（两端在同一个局域网里），控制端可以直接连本机的 IP 和端口（端口见下面的 port）。
+# 开着的话，没配对过的控制端连进来同样要配对码（菜单里显示配对码），安全性不变。
+# allow 是允许连入的网段（例如 "192.168.1.0/24"），挡住不认识的人的连接请求；空着不限。
+# bind 是监听哪块网卡的 IP（例如 192.168.1.5）；空着是所有网卡。改完要重新启动 Airhand
+#[lan]
+#listen = false
+#port = 4433
+#bind = ""
+#allow = []
+
 # 本机的控制码：第一次连上服务器时由服务器分配，之后一直使用同一个（重启、掉线、升级都不变）。
 # 菜单里"更换控制码"会换一个新的；删掉 code 和 secret 则下次启动时重新分配。
 # secret 是取回这个控制码的凭据
@@ -445,6 +560,16 @@ fn template_user(server: &str, fp: &str) -> String {
 # server_fp = ""
 
 {access}
+
+# LAN direct connections: without a relay server (both ends on the same network), controllers connect straight to this computer's IP and port (the port is `port` below).
+# Pairing is still required for controllers that haven't paired (the pairing code is in the menu); the security is the same.
+# `allow` lists the networks that may connect (e.g. "192.168.1.0/24"), blocking strangers' connection attempts; empty means everyone.
+# `bind` is the IP of the network adapter to listen on (e.g. 192.168.1.5); empty means all of them. Restart Airhand after editing
+#[lan]
+#listen = false
+#port = 4433
+#bind = ""
+#allow = []
 
 # This computer's control code: assigned by the server the first time, then always the same (across restarts, disconnects and upgrades).
 # "Change control code" in the menu gets a new one; delete code and secret to get a new one at the next start.
@@ -1277,6 +1402,7 @@ mod tests {
     fn device(code: &str) -> crate::devices::Device {
         crate::devices::Device {
             code: code.into(),
+            addr: None,
             alias: None,
             name: format!("PC-{code}"),
             os: "macOS 15.3".into(),

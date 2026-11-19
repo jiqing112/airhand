@@ -266,6 +266,11 @@ fn login_item_entry(
 /// 被控端：服务器状态、控制码、正在控制本机的控制端
 fn host_items(app: &AppHandle, menu: &Menu<Wry>, st: &AppStatus) -> tauri::Result<()> {
     menu.append(&label(app, server_line(&st.host.server))?)?;
+    // 局域网直连开着时告诉本机用户连哪个地址（控制端就是连这个）
+    if let Some(addr) = st.host.lan {
+        let addr = addr.to_string();
+        menu.append(&label(app, tr!("局域网直连：{addr}", "LAN direct: {addr}"))?)?;
+    }
     {
         #[cfg(target_os = "macos")]
         permission_items(app, menu)?;

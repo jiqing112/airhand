@@ -45,6 +45,10 @@ const MAX_CODE: usize = 1024;
 #[serde(rename_all = "camelCase")]
 pub struct Device {
     pub code: String,
+    /// 局域网直连的目标地址（`IP:端口`，见 `airhand_proto::lan`）；走服务器时为 `None`。
+    /// 有它就按地址直连（`code` 是空的），没有就按控制码走服务器
+    #[serde(default)]
+    pub addr: Option<String>,
     /// 用户起的名字（为空时显示对方的设备名）
     #[serde(default)]
     pub alias: Option<String>,
@@ -53,7 +57,7 @@ pub struct Device {
     pub name: String,
     #[serde(default)]
     pub os: String,
-    /// 重连凭证：对方不在线时等它上线，不算猜码
+    /// 重连凭证：对方不在线时等它上线，不算猜码（局域网直连没有凭证：按 [`Device::addr`] 再连）
     #[serde(default)]
     pub resume: Option<ResumeToken>,
     /// 对方的端到端加密公钥（64 位十六进制）
@@ -72,21 +76,32 @@ pub fn valid_code(code: &str) -> bool {
     code.len() == 6 && code.bytes().all(|b| b.is_ascii_digit()) && !code.starts_with('0')
 }
 
+/// 局域网直连的地址像不像样（解析交给连接的时候；这里挡住明显不对的）
+fn valid_addr(addr: &str) -> bool {
+    !addr.is_empty()
+        && addr.len() <= MAX_TEXT
+        && !addr.contains(['\n', '\r', ' '])
+        && addr.rsplit_once(':').map_or(true, |(host, port)| {
+            !host.is_empty() && port.parse::<u16>().is_ok()
+        })
+}
+
 fn clip(s: &str) -> String {
     s.trim().chars().take(MAX_TEXT).collect()
 }
 
 /// 整理控制台发来的列表：去掉无效的、重复的，按最后连接时间排序，最多 [`MAX`] 台
 pub fn normalize(mut list: Vec<Device>) -> Vec<Device> {
-    list.retain(|d| valid_code(&d.code));
+    list.retain(|d| valid_code(&d.code) || d.addr.as_deref().is_some_and(valid_addr));
     list.sort_by_key(|d| std::cmp::Reverse(d.last_used));
     let mut seen = std::collections::HashSet::new();
-    list.retain(|d| seen.insert(d.code.clone()));
+    list.retain(|d| seen.insert((d.code.clone(), d.addr.clone())));
     list.truncate(MAX);
     for d in &mut list {
         d.name = clip(&d.name);
         d.os = clip(&d.os);
         d.alias = d.alias.as_deref().map(clip).filter(|a| !a.is_empty());
+        d.addr = d.addr.as_deref().map(clip).filter(|a| valid_addr(a));
         d.host_key = d.host_key.as_deref().and_then(host_key);
     }
     list
@@ -131,13 +146,24 @@ fn from_table(t: &Table) -> Option<Device> {
             .map(clip)
             .unwrap_or_default()
     };
-    let code = t.get("code")?.as_str()?.trim().to_string();
-    if code.is_empty() || code.len() > MAX_CODE {
+    let addr = t
+        .get("addr")
+        .and_then(Item::as_str)
+        .map(clip)
+        .filter(|a| valid_addr(a));
+    let code = t
+        .get("code")
+        .and_then(Item::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    if (code.is_empty() && addr.is_none()) || code.len() > MAX_CODE {
         return None;
     }
     let alias = str_of("alias");
     Some(Device {
         code,
+        addr,
         alias: (!alias.is_empty()).then_some(alias),
         name: str_of("name"),
         os: str_of("os"),
@@ -222,11 +248,19 @@ fn seal(mut d: Device) -> Result<Device> {
 /// 写进 config.toml 的一项。文字太长、`code` 不像样的直接丢掉（Windows 上这份列表来自命名管道，要再检查一遍）
 pub fn to_table(d: &Device) -> Option<Table> {
     let code = d.code.trim();
-    if code.is_empty() || code.len() > MAX_CODE || code.contains(['\n', '\r']) {
+    if (code.is_empty() && d.addr.is_none())
+        || code.len() > MAX_CODE
+        || code.contains(['\n', '\r'])
+    {
         return None;
     }
     let mut t = Table::new();
-    t["code"] = toml_edit::value(code);
+    if !code.is_empty() {
+        t["code"] = toml_edit::value(code);
+    }
+    if let Some(a) = d.addr.as_deref().filter(|a| valid_addr(a)) {
+        t["addr"] = toml_edit::value(a);
+    }
     t["name"] = toml_edit::value(clip(&d.name));
     if let Some(a) = d.alias.as_deref().map(clip).filter(|a| !a.is_empty()) {
         t["alias"] = toml_edit::value(a);
@@ -331,6 +365,7 @@ mod tests {
     fn device(code: &str, last_used: i64) -> Device {
         Device {
             code: code.into(),
+            addr: None,
             alias: None,
             name: format!("PC-{code}"),
             os: "Windows 11".into(),

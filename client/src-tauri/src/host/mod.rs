@@ -128,6 +128,7 @@ async fn run(hub: StatusHub, gate: Arc<DesktopGate>, cmds: mpsc::UnboundedReceiv
     let events = Arc::new(TrayStatus(hub, gate.clone()));
     airhand_link::host::run(
         config::link(),
+        config::lan(),
         config::persistent(),
         reclaim,
         events,
@@ -190,5 +191,9 @@ impl HostEvents for TrayStatus {
         if cmd == HostCmd::NewCode {
             self.1.reset();
         }
+    }
+
+    fn lan_listening(&self, addr: std::net::SocketAddr) {
+        self.0.send_modify(|s| s.host.lan = Some(addr));
     }
 }

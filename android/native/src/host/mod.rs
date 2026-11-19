@@ -281,6 +281,8 @@ impl Host {
         let sh = shared.clone();
         let task = rt().spawn(airhand_link::host::run(
             link,
+            // 手机暂不支持局域网直连监听（被控端只有服务器模式）
+            None,
             true,
             reclaim,
             shared.clone(),

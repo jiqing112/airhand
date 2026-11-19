@@ -97,10 +97,7 @@ function AppMenu({ onClose }: { onClose: () => void }) {
             <span className="am-item-icon">
               <IconSwap size={16} />
             </span>
-            <span className="am-item-text">
-              {t("menu.toHost")}
-              <span className="muted small block">{t("menu.toHostHint")}</span>
-            </span>
+            <span className="am-item-text">{t("menu.toHost")}</span>
           </button>
           <button className={`am-item ${keys ? "open" : ""}`} aria-expanded={keys} onClick={() => setKeys((k) => !k)}>
             <span className="am-item-icon">
@@ -270,7 +267,6 @@ function ServerPanel({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      <p className="sp-hint">{t("server.hint")}</p>
     </Popover>
   );
 }

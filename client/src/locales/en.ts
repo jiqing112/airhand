@@ -86,6 +86,8 @@ const en: Record<MsgKey, Msg> = {
   "connect.localPw": "Password",
   "connect.localRandom": "Regenerate password",
   "connect.localEdit": "Edit password",
+  "connect.localCode": "Control code",
+  "connect.localCodeChange": "Change",
   "connect.localShow": "Show password",
   "connect.localHide": "Hide password",
   "connect.target": "Control code or IP address",

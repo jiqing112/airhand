@@ -204,6 +204,10 @@ class WebConsole extends ConsoleLink implements Backend {
   async regenerateLanPassword() {
     return "";
   }
+  async changeControlCode() {}
+  onControlCode() {
+    return () => {};
+  }
   async setLanguage() {}
   onLangChanged() {
     return () => {};

@@ -430,6 +430,8 @@ struct AppInfo {
     lan_addr: Option<String>,
     /// 本机的连接密码（配对码；access = Pairing 时才有，主界面可显示 / 隐藏）
     pairing_code: Option<String>,
+    /// 本机的控制码（连上服务器时有效；主界面显示 + 更换）
+    code: Option<String>,
     pinned: bool,
     hostname: String,
     lang: Lang,
@@ -446,6 +448,7 @@ fn app_info(hub: &StatusHub) -> AppInfo {
         lan_port: config::settings().lan.port,
         lan_addr: hub.borrow().host.lan.map(|a| a.to_string()),
         pairing_code: hub.borrow().host.pairing.clone(),
+        code: hub.borrow().host.code.map(airhand_proto::format_code),
         pinned: config::pinned(),
         hostname: sysinfo::host_identity().0,
         lang: i18n::current(),
@@ -594,6 +597,20 @@ async fn regenerate_lan_password(state: tauri::State<'_, AppState>) -> Result<St
     Ok(code)
 }
 
+/// 更换控制码（和托盘菜单里的同一个动作）：服务器随机分配新码，旧码作废、配对清空。
+/// 新码经 code-changed 事件送到主界面
+#[tauri::command]
+async fn change_control_code(state: tauri::State<'_, AppState>) -> Result<(), Problem> {
+    let sv = state.services.lock().unwrap();
+    match &sv.host {
+        Some(h) => {
+            h.send(HostCmd::NewCode);
+            Ok(())
+        }
+        None => Err(Problem::failed("the host isn't running in this session")),
+    }
+}
+
 /// 设置改完立即重启（托盘进程重新读配置；Windows 安装版先重启系统服务里的被控端）
 #[tauri::command]
 async fn restart_app(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), Problem> {
@@ -708,6 +725,7 @@ pub fn run() {
             save_server,
             save_lan,
             regenerate_lan_password,
+            change_control_code,
             restart_app,
             clipboard_text,
             set_fullscreen,
@@ -760,6 +778,7 @@ pub fn run() {
             let mut rx = hub.subscribe();
             tauri::async_runtime::spawn(async move {
                 let mut lang = None;
+                let mut code: Option<String> = None;
                 loop {
                     let st = rx.borrow_and_update().clone();
                     tray::refresh(&handle, &st);
@@ -769,6 +788,12 @@ pub fn run() {
                             let _ = w.set_title(&console_title());
                         }
                         let _ = handle.emit_to(CONSOLE, "lang-changed", cur);
+                    }
+                    // 控制码变了（注册成功 / 更换 / 掉线）：主界面左下角的信息条跟着更新
+                    let cur_code = st.host.code.map(airhand_proto::format_code);
+                    if code != cur_code {
+                        let _ = handle.emit_to(CONSOLE, "code-changed", cur_code.clone());
+                        code = cur_code;
                     }
                     if rx.changed().await.is_err() {
                         break;

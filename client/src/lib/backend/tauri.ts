@@ -68,6 +68,14 @@ class DesktopConsole extends ConsoleLink implements Backend {
     return invoke<string>("regenerate_lan_password");
   }
 
+  changeControlCode() {
+    return invoke<void>("change_control_code");
+  }
+
+  onControlCode(cb: (code: string | null) => void) {
+    return unlistenLater(listen<string | null>("code-changed", (e) => cb(e.payload)));
+  }
+
   loadDevices() {
     return invoke<SavedDevice[]>("devices_load");
   }

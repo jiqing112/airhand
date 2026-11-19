@@ -132,6 +132,8 @@ export interface AppInfo {
   lanAddr?: string | null;
   /** 本机的连接密码（配对码）：主界面可显示 / 隐藏 */
   pairingCode?: string | null;
+  /** 本机的控制码（连上服务器时有效）：主界面可显示 / 更换 */
+  code?: string | null;
   pinned: boolean;
   /** 被控端看到的本控制端名称（桌面版是计算机名） */
   hostname: string;
@@ -337,6 +339,10 @@ export interface Backend {
   saveLan(listen: boolean, port: number, password: string | null): Promise<void>;
   /** 随机生成新的连接密码（返回新密码；被控端的门立即更新） */
   regenerateLanPassword(): Promise<string>;
+  /** 更换控制码（服务器随机分配新码，旧码作废、配对清空）；新码经 onControlCode 送达 */
+  changeControlCode(): Promise<void>;
+  /** 控制码变化（注册 / 更换 / 掉线）。返回取消订阅的函数 */
+  onControlCode(cb: (code: string | null) => void): () => void;
   /** 切换界面语言（桌面版同时作用于托盘菜单） */
   setLanguage(lang: Lang): Promise<void>;
   /** 语言被切换（包括在托盘菜单里切换） */

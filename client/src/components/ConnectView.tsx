@@ -30,6 +30,9 @@ export function ConnectView() {
   /** 本机连接密码默认打码（像向日葵 / ToDesk）：点眼睛显示；随机生成后本地先更新 */
   const [showPw, setShowPw] = useState(false);
   const [regenerated, setRegenerated] = useState<string | null>(null);
+  /** 本机的控制码（连接后从后端事件流更新） */
+  const [code, setCode] = useState<string | null>(null);
+  useEffect(() => api.onControlCode(setCode), []);
 
   // 新建连接标签总是有的时候才显示这一页；万一没有（例如状态不一致），补一个
   useEffect(() => {
@@ -243,6 +246,22 @@ export function ConnectView() {
                 onClick={() => store.setSettings("lan")}
               >
                 <IconPencil size={14} />
+              </button>
+            </div>
+          )}
+          {code && (
+            <div className="nt-local-row">
+              <span className="set-title">{t("connect.localCode")}</span>
+              <span className="mono">{code}</span>
+              <LocalCopy text={code} />
+              <button
+                className="icon-btn subtle"
+                title={t("connect.localCodeChange")}
+                aria-label={t("connect.localCodeChange")}
+                disabled={busy}
+                onClick={() => void api.changeControlCode().catch(() => {})}
+              >
+                <IconRefresh size={14} />
               </button>
             </div>
           )}

@@ -310,6 +310,43 @@ pub fn link() -> Arc<LinkConfig> {    static LINK: LazyLock<Arc<LinkConfig>> = L
     LINK.clone()
 }
 
+/// 控制台的设置里开关局域网直连监听：写 `[lan]` 的 `listen` / `port`；
+/// `password` 给了就同时换配对码（加密保存，原来暂停的配对随之恢复）。
+/// 和 save_server 一样只写文件：监听器在被控端启动时创建，重启 Airhand 后生效
+pub fn save_lan(listen: bool, port: u16, password: Option<&str>) -> Result<()> {
+    edit(|doc| {
+        let item = doc.entry("lan").or_insert_with(|| {
+            let mut t = toml_edit::Table::new();
+            t.decor_mut().set_prefix(format!("
+{}", lan_comment()));
+            Item::Table(t)
+        });
+        if !item.is_table() {
+            *item = Item::Table(toml_edit::Table::new());
+        }
+        let t = item.as_table_mut().expect("just set to a table");
+        t["listen"] = toml_edit::value(listen);
+        t["port"] = toml_edit::value(i64::from(port));
+        Ok(())
+    })?;
+    if let Some(code) = password {
+        save_pairing(code, false)?;
+    }
+    Ok(())
+}
+
+/// 写在 `[lan]` 前面的说明
+fn lan_comment() -> String {
+    tr!(
+        "# 局域网直连：没有中转服务器时，同一局域网里的控制端可以直接连本机的 IP 和端口。
+# 配对码就是连接密码：第一次连接要输入（在控制台的设置里改）；托盘菜单会显示本机的局域网地址
+",
+        "# LAN direct connections: without a relay server, controllers on the same network connect to this computer's IP and port.
+# The pairing code doubles as the connection password: it is asked for on the first connection (change it in the console's settings); the tray menu shows this computer's LAN address
+"
+    )
+}
+
 /// 控制台的设置里改中转服务器：写 `server` 和 `server_fp`（保留注释和别的键）。
 /// 指纹留空 = 首次连接时信任；写了就按 64 位十六进制校验（允许 `:` 和空格分隔，存成标准格式）。
 /// 只写文件：已经在跑的被控端 / 控制端服务读到的是启动时的配置，重启 Airhand 后生效

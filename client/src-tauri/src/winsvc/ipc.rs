@@ -85,6 +85,12 @@ pub enum ToAgent {
         server: String,
         fp: String,
     },
+    /// 控制台的设置里改了局域网直连：写 `[lan]`，`password` 给了同时换配对码
+    SaveLan {
+        listen: bool,
+        port: u16,
+        password: Option<String>,
+    },
     /// 换一个配对码（暂停了的配对随之恢复）
     NewPairingCode,
     /// 忘掉所有配对过的控制端
@@ -281,6 +287,17 @@ async fn handle(msg: ToAgent, agent: &Agent) {
                 Ok(Ok(())) => debug!("saved the relay server address"),
                 Ok(Err(e)) => warn!("can't save the relay server address: {e:#}"),
                 Err(e) => warn!("can't save the relay server address: {e}"),
+            }
+        }
+        ToAgent::SaveLan { listen, port, password } => {
+            let r = tokio::task::spawn_blocking(move || {
+                crate::config::save_lan(listen, port, password.as_deref())
+            })
+            .await;
+            match r {
+                Ok(Ok(())) => debug!(listen, port, "saved the lan settings"),
+                Ok(Err(e)) => warn!("can't save the lan settings: {e:#}"),
+                Err(e) => warn!("can't save the lan settings: {e}"),
             }
         }
         ToAgent::SaveDevices { devices } => {

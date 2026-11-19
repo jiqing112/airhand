@@ -125,6 +125,9 @@ export interface AppInfo {
   server: string;
   /** 配置的证书指纹（"": 首次连接时信任）；设置对话框回填用 */
   serverFp?: string | null;
+  /** 局域网直连监听（设置对话框回填用；网页版没有） */
+  lanListen?: boolean;
+  lanPort?: number;
   pinned: boolean;
   /** 被控端看到的本控制端名称（桌面版是计算机名） */
   hostname: string;
@@ -326,6 +329,8 @@ export interface Backend {
   saveServer(server: string, fp: string): Promise<void>;
   /** 保存后立即重启（桌面版重新读配置；网页版什么也不做） */
   restartApp(): Promise<void>;
+  /** 局域网直连监听开关 / 端口；password 给了就同时换配对码（它就是局域网的连接密码） */
+  saveLan(listen: boolean, port: number, password: string | null): Promise<void>;
   /** 切换界面语言（桌面版同时作用于托盘菜单） */
   setLanguage(lang: Lang): Promise<void>;
   /** 语言被切换（包括在托盘菜单里切换） */

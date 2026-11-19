@@ -423,6 +423,9 @@ struct AppInfo {
     server: String,
     /// 编译 / 配置进来的证书指纹（"": 首次连接时信任，设置对话框回填用）
     server_fp: String,
+    /// 局域网直连监听（设置对话框回填用）
+    lan_listen: bool,
+    lan_port: u16,
     pinned: bool,
     hostname: String,
     lang: Lang,
@@ -435,6 +438,8 @@ fn app_info() -> AppInfo {
         version: config::VERSION,
         server: config::settings().server.clone(),
         server_fp: config::settings().server_fp.clone(),
+        lan_listen: config::settings().lan.listen,
+        lan_port: config::settings().lan.port,
         pinned: config::pinned(),
         hostname: sysinfo::host_identity().0,
         lang: i18n::current(),
@@ -516,6 +521,39 @@ async fn save_server(
         .await
         .map_err(Problem::failed)?
         .map_err(Problem::failed)
+}
+
+/// 控制台的设置里改局域网直连监听（写 `[lan]`；`password` 给了同时换配对码）。
+/// Windows 安装版经命名管道交给服务写，同 [`save_server`]
+#[tauri::command]
+async fn save_lan(
+    state: tauri::State<'_, AppState>,
+    listen: bool,
+    port: u16,
+    password: Option<String>,
+) -> Result<(), Problem> {
+    #[cfg(windows)]
+    if state.service_mode {
+        let connected = state.hub.borrow().service.is_some_and(|s| s.connected);
+        let sv = state.services.lock().unwrap();
+        return match &sv.host {
+            Some(Hosting::Service(link)) if connected => {
+                link.send(winsvc::ipc::ToAgent::SaveLan { listen, port, password });
+                Ok(())
+            }
+            _ => Err(Problem::failed(
+                "the Airhand service isn't reachable from this session",
+            )),
+        };
+    }
+    #[cfg(windows)]
+    let _ = &state;
+    tauri::async_runtime::spawn_blocking(move || {
+        config::save_lan(listen, port, password.as_deref())
+    })
+    .await
+    .map_err(Problem::failed)?
+    .map_err(Problem::failed)
 }
 
 /// 设置改完立即重启（托盘进程重新读配置；Windows 安装版先重启系统服务里的被控端）
@@ -629,6 +667,7 @@ pub fn run() {
             console_url,
             set_language,
             save_server,
+            save_lan,
             restart_app,
             clipboard_text,
             set_fullscreen,

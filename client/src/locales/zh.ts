@@ -40,6 +40,13 @@ export default {
   "server.unpinnedHint": "未配置证书指纹：第一次连接时记住了服务器的证书，之后证书变了就拒绝连接",
 
   // 设置（标签栏右侧的齿轮）
+  "settings.lan": "局域网直连",
+  "settings.lanListen": "允许局域网直连（监听）",
+  "settings.lanPort": "端口",
+  "settings.lanPassword": "连接密码",
+  "settings.lanPasswordPlaceholder": "6 位数字，留空 = 不修改",
+  "settings.lanPasswordHint": "控制端第一次连接时要输入；它同时也是被控端的配对码（中转模式同样用它）",
+  "settings.lanHint": "重启后开始监听；托盘菜单会显示本机的局域网地址，控制端输 IP:端口 + 密码即可连接",
   "settings.title": "设置",
   "settings.close": "关闭设置",
   "settings.server": "中转服务器",

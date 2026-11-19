@@ -40,6 +40,7 @@ export function SettingsDialog() {
         </div>
 
         {!web && <ServerSection />}
+        {!web && <LanSection />}
 
         <div className="set-section">
           <div className="set-title">{t("settings.general")}</div>
@@ -202,6 +203,113 @@ function CopyButton({ text }: { text: string }) {
       {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
       <span>{t(done ? "menu.copied" : "menu.copy")}</span>
     </button>
+  );
+}
+
+/** 局域网直连：监听开关 + 端口 + 连接密码（就是被控端的配对码，第一次连接要输入）。
+ * 保存写 `[lan]` 和配对码，重启后被控端开始监听；托盘菜单会显示本机的局域网地址 */
+function LanSection() {
+  const t = useT();
+  const app = useStore((s) => s.app);
+  const [listen, setListen] = useState(false);
+  const [port, setPort] = useState("4433");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<{ listen: boolean; port: number } | null>(null);
+
+  // app 信息晚一点到达：只回填一次
+  useEffect(() => {
+    if (app) {
+      setListen((v) => v || app.lanListen || false);
+      setPort((v) => (v === "4433" && app.lanPort ? String(app.lanPort) : v));
+    }
+  }, [app]);
+
+  const portNum = Number(port);
+  const portOk = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535;
+  const pwOk = password.trim() === "" || /^\d{6}$/.test(password.trim());
+  const baseline = saved ?? { listen: app?.lanListen ?? false, port: app?.lanPort ?? 4433 };
+  const dirty = listen !== baseline.listen || portNum !== baseline.port || password.trim() !== "";
+  const ready = portOk && pwOk;
+
+  const save = () => {
+    if (!ready || !dirty || saving) return;
+    setSaving(true);
+    setError(null);
+    const pw = password.trim() === "" ? null : password.trim();
+    void api
+      .saveLan(listen, portNum, pw)
+      .then(() => {
+        setSaved({ listen, port: portNum });
+        setPassword("");
+      })
+      .catch((e) => setError(String(e?.message ?? e)))
+      .finally(() => setSaving(false));
+  };
+
+  const restart = () => void api.restartApp().catch(() => {});
+
+  return (
+    <div className="set-section">
+      <div className="set-title">{t("settings.lan")}</div>
+      <div className="set-row">
+        <span className="am-label">{t("settings.lanListen")}</span>
+        <input
+          type="checkbox"
+          className="switch"
+          checked={listen}
+          onChange={(e) => setListen(e.target.checked)}
+        />
+      </div>
+      {listen && (
+        <>
+          <label className="nt-field">
+            <span className="am-label">{t("settings.lanPort")}</span>
+            <input
+              className={`set-input mono ${portOk ? "" : "invalid"}`}
+              value={port}
+              inputMode="numeric"
+              spellCheck={false}
+              autoComplete="off"
+              onChange={(e) => setPort(e.target.value.replace(/\D/g, "").slice(0, 5))}
+            />
+          </label>
+          <label className="nt-field">
+            <span className="am-label">{t("settings.lanPassword")}</span>
+            <input
+              className={`set-input mono ${pwOk ? "" : "invalid"}`}
+              value={password}
+              inputMode="numeric"
+              autoComplete="new-password"
+              placeholder={t("settings.lanPasswordPlaceholder")}
+              maxLength={6}
+              onChange={(e) => setPassword(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            />
+            <span className="set-note">{t("settings.lanPasswordHint")}</span>
+          </label>
+        </>
+      )}
+      <div className="set-actions">
+        <button className="primary-btn" disabled={!ready || !dirty || saving} onClick={save}>
+          {saving ? <span className="spinner" /> : null}
+          <span>{t("settings.save")}</span>
+        </button>
+        {saved && (
+          <>
+            <span className="set-saved">
+              <IconCheck size={14} />
+              {t("settings.saved")}
+            </span>
+            <button className="ghost-btn" onClick={restart}>
+              {t("settings.restartNow")}
+            </button>
+          </>
+        )}
+      </div>
+      {error && <div className="set-error">{error}</div>}
+      {saved && <div className="set-note">{t("settings.lanHint")}</div>}
+    </div>
   );
 }
 

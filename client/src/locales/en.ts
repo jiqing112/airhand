@@ -36,6 +36,13 @@ const en: Record<MsgKey, Msg> = {
   "server.unpinned": "Trust on first use",
   "server.unpinnedHint": "No certificate fingerprint configured: the server's certificate was remembered on the first connection, and a different one is refused.",
 
+  "settings.lan": "LAN direct connections",
+  "settings.lanListen": "Allow LAN direct connections (listen)",
+  "settings.lanPort": "Port",
+  "settings.lanPassword": "Connection password",
+  "settings.lanPasswordPlaceholder": "6 digits; leave empty to keep the current one",
+  "settings.lanPasswordHint": "Controllers type it on the first connection; it doubles as the host's pairing code (used by the relayed flow too)",
+  "settings.lanHint": "Listening starts after the restart; the tray menu shows this computer's LAN address — controllers connect with IP:port + password",
   "settings.title": "Settings",
   "settings.close": "Close settings",
   "settings.server": "Relay server",

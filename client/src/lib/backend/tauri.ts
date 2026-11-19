@@ -60,6 +60,10 @@ class DesktopConsole extends ConsoleLink implements Backend {
     return invoke<void>("restart_app");
   }
 
+  saveLan(listen: boolean, port: number, password: string | null) {
+    return invoke<void>("save_lan", { listen, port, password });
+  }
+
   loadDevices() {
     return invoke<SavedDevice[]>("devices_load");
   }

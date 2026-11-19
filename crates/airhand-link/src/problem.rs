@@ -49,6 +49,8 @@ pub enum Problem {
     ServerTimeout,
     /// 对方暂时不在线（重连时才会遇到：服务器确认过是之前连上的那台），对方重新上线后自动重连
     HostOffline,
+    /// 连不上被控端（局域网直连：地址解析不了、对方没开监听、网络不通）。不会自动重连
+    HostUnreachable { detail: String },
 
     // ── 端到端握手（见 airhand_proto::handshake）──
     /// 对方的身份（端到端加密的公钥）和之前记下的不一样：对方重装过、换了身份，或者有人在中间冒充它。
@@ -153,6 +155,9 @@ impl fmt::Display for Problem {
             Problem::HostBusy => f.write_str("the host has reached its session limit"),
             Problem::ServerTimeout => f.write_str("the server didn't answer in time"),
             Problem::HostOffline => f.write_str("the host is offline, waiting for it to come back"),
+            Problem::HostUnreachable { detail } => {
+                write!(f, "can't reach the host: {detail}")
+            }
             Problem::HostKeyChanged => f.write_str(
                 "the host's identity changed (it was reinstalled, or someone is impersonating it)",
             ),

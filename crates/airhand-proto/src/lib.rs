@@ -70,6 +70,7 @@ pub mod framing;
 /// 消息的编码（带编号的 CBOR，见 [`framing`]）
 pub use minicbor;
 pub mod handshake;
+pub mod lan;
 pub mod media;
 pub mod session;
 pub mod signal;

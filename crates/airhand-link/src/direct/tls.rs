@@ -101,6 +101,22 @@ pub(crate) fn client_config(cert: &Cert, host: [u8; 32]) -> Result<ClientConfig>
     Ok(cfg)
 }
 
+/// 控制端：连被控端的局域网直连。被控端的证书是它临时生成的自签名证书，没有指纹可以先认
+/// ——TLS 在这里只是传输层，认证是控制通道上的端到端握手（见 `airhand_proto::lan`）
+pub(crate) fn lan_client_config(cert: &Cert) -> Result<ClientConfig> {
+    let provider = provider();
+    let mut tls = rustls::ClientConfig::builder_with_provider(provider.clone())
+        .with_protocol_versions(&[&rustls::version::TLS13])?
+        .dangerous()
+        .with_custom_certificate_verifier(Arc::new(AnyServer(provider)))
+        .with_client_auth_cert(vec![cert.der.clone()], cert.key.clone_key().into())
+        .context("bad lan certificate")?;
+    tls.alpn_protocols = vec![DIRECT_ALPN.to_vec()];
+    let mut cfg = ClientConfig::new(Arc::new(QuicClientConfig::try_from(tls)?));
+    cfg.transport_config(Arc::new(transport()));
+    Ok(cfg)
+}
+
 /// 直连另一头的证书指纹（握手完成之后才有）
 pub(crate) fn peer_fingerprint(conn: &Connection) -> Option<[u8; 32]> {
     let certs = conn
@@ -174,12 +190,50 @@ impl ServerCertVerifier for Pinned {
     }
 }
 
+/// 任何服务端证书都接受（照样校验握手签名）：局域网直连用，认证是端到端的握手（见模块说明）
+#[derive(Debug)]
+struct AnyServer(Arc<CryptoProvider>);
+
+impl ServerCertVerifier for AnyServer {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _: &[u8],
+        _: &CertificateDer<'_>,
+        _: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        Err(rustls::Error::General("TLS 1.2 isn't used".into()))
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &CertificateDer<'_>,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, rustls::Error> {
+        tls13_signature(&self.0, message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        self.0.signature_verification_algorithms.supported_schemes()
+    }
+}
+
 /// 任何客户端证书都接受（照样校验握手签名），是谁握手之后按指纹认（见模块说明）
 #[derive(Debug)]
 struct AnyClient(Arc<CryptoProvider>);
 
-impl ClientCertVerifier for AnyClient {
-    fn root_hint_subjects(&self) -> &[DistinguishedName] {
+impl ClientCertVerifier for AnyClient {    fn root_hint_subjects(&self) -> &[DistinguishedName] {
         &[]
     }
 

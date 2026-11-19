@@ -205,6 +205,20 @@ impl Router {
         (router, task)
     }
 
+    /// 局域网直连的引导：第一条流（控制通道）的会话头和 [`airhand_proto::lan::LanConnect`] 已经在
+    /// 接受连接时读掉了（会话号在消息里，要读出来才知道登记哪个会话），剩下的部分按会话号存进
+    /// "先到的流"，[`Router::register`] 时交给真正的会话
+    pub fn prime(&self, session_id: u64, lane: u8, recv: RecvStream) {
+        self.stream(
+            SessionHeader {
+                session_id,
+                lane,
+                priority: 0,
+            },
+            recv,
+        );
+    }
+
     /// 登记一个会话：之后（以及之前先到了的）这个会话的流、数据报都交给返回的 [`Inbox`]
     pub fn register(self: &Arc<Self>, session_id: u64) -> (Inbox, Registration) {
         let inbox = Inbox::new();

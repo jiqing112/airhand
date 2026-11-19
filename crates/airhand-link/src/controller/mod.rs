@@ -60,6 +60,7 @@ mod receiver;
 mod session;
 
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -71,13 +72,14 @@ use crate::tasks::OwnedTask;
 use crate::wire::{read_msg, write_msg};
 use airhand_proto::framing;
 use airhand_proto::handshake::SEAL_OVERHEAD;
+use airhand_proto::lan::{LAN_CODE, LanConnect};
 use airhand_proto::media;
 use airhand_proto::session::{ControllerMsg, InputEvent, MAX_CLIPBOARD_TEXT, QualitySettings};
 use airhand_proto::signal::{ClientMsg, ResumeToken, ServerMsg, SessionGrant, connect_outcome};
 use airhand_proto::{MAX_SIGNAL_MSG, Role};
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use bytes::Bytes;
-use quinn::{Connection, Endpoint};
+use quinn::{Connection, Endpoint, EndpointConfig};
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 use tokio::sync::{mpsc, oneshot};
@@ -86,7 +88,7 @@ use tracing::{debug, info, warn};
 
 use crate::net::{self, LinkConfig, Reconnect, Report};
 use crate::{Problem, ServerState};
-pub use link::{Established, establish};
+pub use link::{Established, establish, establish_lan};
 pub use receiver::{FromHost, HostReceiver};
 pub use session::{NoticeView, SessionEvent, SessionUi, UiClosed};
 
@@ -279,10 +281,14 @@ pub struct ControllerService {
 pub struct SessionInfo {
     pub sid: u32,
     pub code: String,
+    /// 局域网直连的目标地址（`IP:端口`，连的就是它）；走服务器时为 `None`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub addr: Option<String>,
     pub host_name: String,
     pub host_os: String,
-    /// 重连凭证：这个会话断了之后重连时交给 [`ControllerService::connect`]
-    pub resume: ResumeToken,
+    /// 重连凭证：这个会话断了之后重连时交给 [`ControllerService::connect`]。
+    /// 局域网直连没有凭证：按 [`SessionInfo::addr`] 再连一次
+    pub resume: Option<ResumeToken>,
     /// 被控端的公钥（64 位十六进制）：界面保存下来，之后连它时带上（[`ConnectOptions::host_key`]）
     pub host_key: String,
     /// 安全码（见模块说明的"端到端加密"）
@@ -483,9 +489,156 @@ impl ControllerService {
         Ok(SessionInfo {
             sid,
             code: airhand_proto::format_code(code),
+            addr: None,
             host_name: grant.host_name,
             host_os: grant.host_os,
-            resume: grant.resume,
+            resume: Some(grant.resume),
+            host_key: secure::hex(&peer),
+            safety,
+        })
+    }
+
+    /// 连接局域网里 `addr`（`IP:端口`，端口可省）上监听的被控端（config.toml 的 `[lan]`，协议见
+    /// `airhand_proto::lan`）。`opts` 和 [`ControllerService::connect`] 的一样：记下的对方公钥、配对码、
+    /// 画质和声音（重连凭证用不上——按 [`SessionInfo::addr`] 再连一次）。
+    ///
+    /// 没有服务器参与：两端的 QUIC 连接直接承载会话，端到端握手、配对码和走服务器时完全一样
+    pub async fn connect_addr(
+        &self,
+        addr: &str,
+        opts: ConnectOptions,
+        ui: Arc<dyn SessionUi>,
+        frontend: Frontend,
+    ) -> Result<SessionInfo, Problem> {
+        let addr = lan_target(addr).ok_or_else(|| {
+            Problem::HostUnreachable {
+                detail: format!("bad address {addr:?} (write `IP:port` or `host:port`)"),
+            }
+        })?;
+        let pairing = match opts.pairing.as_deref().map(str::trim) {
+            None | Some("") => None,
+            Some(p) => Some(airhand_proto::parse_pairing(p).ok_or(Problem::PairingFailed)?),
+        };
+        let host_key = match opts.host_key.as_deref() {
+            None | Some("") => None,
+            Some(k) => {
+                Some(secure::unhex32(k).ok_or_else(|| Problem::failed("invalid saved host key"))?)
+            }
+        };
+        // 被控端不认识本机时还是走端到端握手：配对码的 SPAKE2 密码里混的"控制码"两端都用 [`LAN_CODE`]，
+        // 直连模式下控制端不知道（也不需要知道）对方的控制码
+        let intro = secure::controller_intro(
+            &self.inner.cfg.name,
+            &self.inner.cfg.os,
+            opts.settings,
+            opts.audio,
+        );
+        let (initiator, init) = secure::initiate(InitiatorParams {
+            code: LAN_CODE,
+            me: &self.inner.identity,
+            host_key,
+            pairing: pairing.as_deref(),
+            intro: &intro,
+        })
+        .map_err(Problem::failed)?;
+
+        // 直接连过去：TLS 只是传输层（对方是自签名证书），认证在接下来的端到端握手里
+        let (endpoint, conn) = lan_dial(&addr).await.map_err(|e| Problem::HostUnreachable {
+            detail: format!("{e:#}"),
+        })?;
+        let (router, router_task) = Router::start(&conn);
+        let session_id: u64 = rand::random();
+        let lan = LanConnect {
+            session_id,
+            init,
+            name: self.inner.cfg.name.clone(),
+            os: self.inner.cfg.os.clone(),
+        };
+        let link = establish_lan(&router, &conn, initiator, &lan)
+            .await
+            .map_err(|e| Problem::from_error(e, Problem::failed))?;
+        let (peer, safety) = (link.peer, link.safety.clone());
+        let arrivals = Arc::new(Mutex::new(session::Arrivals::default()));
+
+        let sid = self.inner.next_sid.fetch_add(1, Ordering::Relaxed) + 1;
+        let (tx, rx) = queue::channel();
+        let (bulk_tx, bulk_rx) = mpsc::channel(BULK_QUEUE);
+        let (mic_tx, mic_rx) = mpsc::channel(MIC_QUEUE);
+        let mic = link
+            .negotiated
+            .has(airhand_proto::features::session::MIC)
+            .then(|| Mic {
+                tx: mic_tx,
+                on: AtomicBool::new(false),
+            });
+        // Ping、画面确认：控制数据报，从这里发（画面来的那条路，见 [`Paths`]）
+        let feedback = Arc::new(session::Feedback::new(link.datagrams));
+        let (mode, clipboard) = match frontend {
+            Frontend::Desktop { clipboard, sync } => {
+                let enabled = Arc::new(AtomicBool::new(sync));
+                let mode = session::Mode::Desktop {
+                    clip: Arc::new(Mutex::new(clipboard)),
+                    enabled: enabled.clone(),
+                };
+                (mode, Some(enabled))
+            }
+            Frontend::Browser => (session::Mode::Browser, None),
+        };
+        // 已经在直连上了：没有打洞任务。endpoint、连接和 Router 的任务挂在会话上（它们一停会话就断）
+        let (offers_tx, _offers) = mpsc::channel(4);
+        let direct = session::Direct {
+            offers: offers_tx,
+            task: Box::pin(async move {
+                let _transport = (endpoint, conn, router_task, _offers);
+                std::future::pending::<()>().await
+            }),
+        };
+        let io = session::SessionIo {
+            control: link.control,
+            bulk: (link.bulk.0, bulk_rx, link.bulk.1),
+            bulk_tx: bulk_tx.clone(),
+            recv: link.receiver,
+            ui,
+            mode,
+            negotiated: link.negotiated,
+            arrivals: arrivals.clone(),
+            feedback: feedback.clone(),
+            paths: link.paths,
+            direct,
+            mic: (session_id, mic_rx, link.mic),
+        };
+        let registration = link.registration;
+        let inner = self.inner.clone();
+        let tx2 = tx.clone();
+        // Hold the registry lock until insertion; a fast EOF must not remove a
+        // not-yet-inserted entry and leave a dead handle behind.
+        let mut sessions = self.inner.sessions.lock().unwrap();
+        let handle = self.inner.rt.spawn(async move {
+            // 会话结束或者被中止时随之注销
+            let _registration = registration;
+            session::run(sid, io, tx2, rx).await;
+            inner.sessions.lock().unwrap().remove(&sid);
+        });
+        sessions.insert(
+            sid,
+            SessionHandle {
+                tx,
+                bulk: bulk_tx,
+                task: handle.abort_handle(),
+                clipboard,
+                arrivals,
+                feedback,
+                mic,
+            },
+        );
+        info!(sid, addr, %safety, "lan session established");
+        Ok(SessionInfo {
+            sid,
+            code: String::new(),
+            addr: Some(addr),
+            host_name: String::new(),
+            host_os: String::new(),
+            resume: None,
             host_key: secure::hex(&peer),
             safety,
         })
@@ -690,4 +843,57 @@ async fn connect_once(inner: &Arc<Inner>, report: &Report) -> Result<()> {
         r = writer => r,
         e = sig.conn.closed() => Err(anyhow!(e)),
     }
+}
+
+// ───────────────────────────── 局域网直连 ─────────────────────────────
+
+/// 单个地址连不连得上最多等这么久（局域网里这已经足够慢了）
+const LAN_DIAL_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 整理直连的目标地址：`IP:端口`、`主机名:端口` 原样；端口省了的补上默认端口（裸 IPv4、裸主机名）。
+/// 返回 `None`：没写地址（裸 IPv6 要写成 `[::1]:4433`）
+fn lan_target(target: &str) -> Option<String> {
+    let t = target.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if t.parse::<SocketAddr>().is_ok() || t.contains(':') {
+        // IP:端口 / [IPv6]:端口 / 主机名:端口
+        return Some(t.to_string());
+    }
+    Some(format!("{t}:{}", airhand_proto::lan::LAN_DEFAULT_PORT))
+}
+
+/// 连局域网直连（QUIC；传输层 TLS 见 [`crate::direct::tls::lan_client_config`]）：地址族都试
+async fn lan_dial(addr: &str) -> Result<(Endpoint, Connection)> {
+    let (addrs, sni) = net::resolve(addr).await?;
+    let cert = crate::direct::tls::Cert::generate().context("can't generate a lan certificate")?;
+    let config = crate::direct::tls::lan_client_config(&cert)?;
+    let mut last: Option<anyhow::Error> = None;
+    for a in addrs {
+        match tokio::time::timeout(LAN_DIAL_TIMEOUT, dial_one(config.clone(), &sni, a)).await {
+            Ok(Ok(pair)) => return Ok(pair),
+            Ok(Err(e)) => last = Some(e),
+            Err(_) => last = Some(anyhow!("timed out connecting to {a}")),
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow!("no address to connect to")))
+}
+
+/// 连直连的一个地址。endpoint 和连接一起回来：endpoint 一停连接就断，要挂在会话上
+async fn dial_one(config: quinn::ClientConfig, sni: &str, addr: SocketAddr) -> Result<(Endpoint, Connection)> {
+    let (socket, _punch, runtime) =
+        direct::bind(addr).context("can't create a UDP socket")?;
+    let endpoint = Endpoint::new_with_abstract_socket(
+        EndpointConfig::default(),
+        None,
+        socket,
+        runtime,
+    )
+    .context("can't create a QUIC endpoint")?;
+    let conn = endpoint
+        .connect_with(config, addr, sni)?
+        .await
+        .with_context(|| format!("can't connect to {addr}"))?;
+    Ok((endpoint, conn))
 }

@@ -254,8 +254,8 @@ fn client_config(expected: Option<[u8; 32]>, seen: Arc<Seen>) -> Result<ClientCo
     Ok(cfg)
 }
 
-/// 解析服务器地址，返回 (全部地址，按连接的先后排好, SNI)。
-async fn resolve(addr: &str) -> Result<(Vec<SocketAddr>, String)> {
+/// 解析服务器地址，返回 (全部地址，按连接的先后排好, SNI)。局域网直连的地址也用它解析
+pub(crate) async fn resolve(addr: &str) -> Result<(Vec<SocketAddr>, String)> {
     let host = addr
         .rsplit_once(':')
         .map(|(h, _)| h)

@@ -120,9 +120,13 @@ pub fn parse_mic(b: &Bytes) -> Option<(u32, Bytes)> {
 pub enum Call {
     AppInfo,
     /// 连接被控端：`code`、`ch`、`clipboard`（桌面版：开始时是否同步剪贴板），加上 [`ConnectOptions`] 的字段
-    /// （重连凭证、记下的对方公钥、配对码、开始时的画质和声音，和 Android 一样）
+    /// （重连凭证、记下的对方公钥、配对码、开始时的画质和声音，和 Android 一样）。
+    /// `addr`（`IP:端口`）是局域网直连：有它就不走服务器，`code` 被忽略
     Connect {
+        #[serde(default)]
         code: String,
+        #[serde(default)]
+        addr: Option<String>,
         ch: u32,
         #[serde(default)]
         clipboard: bool,
@@ -381,6 +385,7 @@ impl Console {
             Call::AppInfo => Ok(self.info.clone()),
             Call::Connect {
                 code,
+                addr,
                 ch,
                 clipboard,
                 opts,
@@ -405,7 +410,11 @@ impl Console {
                         ch,
                         out: out.clone(),
                     });
-                    let r = svc.connect(&code, opts, ui, frontend).await;
+                    // 局域网直连（addr）：不经过服务器；否则用控制码走服务器
+                    let r = match addr {
+                        Some(addr) => svc.connect_addr(&addr, opts, ui, frontend).await,
+                        None => svc.connect(&code, opts, ui, frontend).await,
+                    };
                     out.reply(
                         req.id,
                         r.and_then(|info| serde_json::to_value(info).map_err(Problem::failed)),
@@ -502,6 +511,7 @@ mod tests {
         assert_eq!(r.id, Some(7));
         let Call::Connect {
             code,
+            addr: _,
             ch,
             clipboard,
             opts,

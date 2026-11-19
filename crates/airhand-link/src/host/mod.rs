@@ -21,12 +21,15 @@
 
 mod clock;
 mod cursor;
+pub mod lan;
 pub mod queue;
 pub mod session;
 mod streams;
 mod write;
 
 use std::future::Future;
+use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -50,6 +53,7 @@ use crate::wire::{read_msg, write_msg};
 pub use crate::secure::{Access, Admission, Gate};
 pub use clock::InputClock;
 pub use cursor::CursorCache;
+pub use lan::{Cidr, LanConfig};
 pub use queue::{Encoded, Outbox, SendError};
 pub use session::{
     APPROVAL_TIMEOUT, Acks, ApprovalSlots, MAX_PENDING_APPROVALS, MicSink, PEER_TIMEOUT, Platform,
@@ -91,6 +95,8 @@ pub trait HostEvents: Send + Sync + 'static {
     fn offline(&self);
     /// 本机用户断开了所有控制端（包括更换控制码），会话正在结束
     fn kicked(&self, _cmd: HostCmd) {}
+    /// 局域网直连监听开始（`addr` 是实际监听的地址；配置里写 `0.0.0.0:0` 时只有这里能知道真实地址）
+    fn lan_listening(&self, _addr: SocketAddr) {}
 }
 
 /// 有控制端要连进来（交给 `run` 的 `session`）
@@ -117,9 +123,11 @@ pub struct Incoming {
 ///
 /// * `keep`：让服务器一直为本机保留控制码（被控端会保存控制码，见 `airhand_proto::signal` 的"固定控制码"）；
 /// * `reclaim`：上次保存的控制码，第一次连接就取回它；
+/// * `lan`：局域网直连监听（[`lan`]）。配置了就开一个独立于服务器的监听：服务器连不上它也在；
 /// * `session`：开始一个会话（[`serve`]）。
 pub async fn run<E, S, F>(
     link: Arc<LinkConfig>,
+    lan: Option<lan::LanConfig>,
     keep: bool,
     reclaim: Option<Reclaim>,
     events: Arc<E>,
@@ -140,10 +148,23 @@ pub async fn run<E, S, F>(
         rekey: false,
     };
     let approvals = ApprovalSlots::default();
+    // 会话闭包装成 dyn：服务器的连接和局域网监听都要用它（S 不要求 Clone）
+    let session: SessionFn = Arc::new(move |inc| Box::pin(session(inc)));
+    // 局域网直连：断开所有控制端、更换控制码时，正在连的 LAN 会话也一起断开（见 connect_once 的命令处理）
+    let (lan_kick, _) = watch::channel(ByeReason::Kicked);
+    let _lan_task = lan.map(|cfg| {
+        lan::listen(
+            cfg,
+            events.clone(),
+            session.clone(),
+            approvals.clone(),
+            lan_kick.clone(),
+        )
+    });
     loop {
         reconnect.begin();
         let result = connect_once(
-            &link, keep, &mut id, &*events, &session, &mut cmds, &approvals,
+            &link, keep, &mut id, &*events, &session, &mut cmds, &approvals, &lan_kick,
         )
         .await;
         events.offline();
@@ -161,19 +182,21 @@ struct Identity {
 }
 
 /// 返回 `Ok(())` 表示需要立即重连（更换控制码），`Err` 表示掉线。
-async fn connect_once<E, S, F>(
+/// 开始一个会话的闭包（[`run`] 的 `session` 参数装好之后的类型）：服务器连上的控制端和局域网直连的都用它
+type SessionFn = Arc<dyn Fn(Incoming) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
+
+async fn connect_once<E>(
     link: &LinkConfig,
     keep: bool,
     id: &mut Identity,
     events: &E,
-    session: &S,
+    session: &SessionFn,
     cmds: &mut mpsc::UnboundedReceiver<HostCmd>,
     approvals: &ApprovalSlots,
+    lan_kick: &watch::Sender<ByeReason>,
 ) -> Result<()>
 where
     E: HostEvents,
-    S: Fn(Incoming) -> F,
-    F: Future<Output = ()> + Send + 'static,
 {
     // 注册紧跟着版本握手发出去，不等服务器回答 Hello（省一个往返）
     let register = ClientMsg::Register {
@@ -304,6 +327,8 @@ where
                 }
                 events.kicked(cmd);
                 kick_tx.send_replace(cmd.reason());
+                // 局域网直连进来的会话也一起断开（它们的 kick 不挂在服务器连接上，见 lan）
+                lan_kick.send_replace(cmd.reason());
                 if cmd == HostCmd::NewCode {
                     // 给会话一点时间把 Bye 发出去，然后放弃旧控制码重新注册
                     let _ = tokio::time::timeout(Duration::from_millis(800), async {

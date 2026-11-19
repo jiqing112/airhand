@@ -69,7 +69,7 @@ pub(crate) fn candidates(
 }
 
 /// 往 `to` 去时本机用哪个地址：UDP 的 connect 不发包，只是选好路由。没有路由、只有链路本地地址时为 `None`
-fn route_ip(to: SocketAddr) -> Option<IpAddr> {
+pub(crate) fn route_ip(to: SocketAddr) -> Option<IpAddr> {
     let bind: SocketAddr = if to.is_ipv4() {
         (Ipv4Addr::UNSPECIFIED, 0).into()
     } else {
@@ -83,6 +83,22 @@ fn route_ip(to: SocketAddr) -> Option<IpAddr> {
         IpAddr::V6(ip) => !(ip.is_unspecified() || ip.is_unicast_link_local()),
     };
     usable.then_some(ip)
+}
+
+/// 本机在局域网里的地址（局域网直连的提示用：绑定 0.0.0.0 时告诉用户连哪个 IP）。
+/// 先按默认路由（有公网出口时就是它），没有公网路由的隔离内网就试常见的私有网段——
+/// UDP 的 connect 只要本机配了那个网段的地址就会成功（目标存不存在无所谓）
+pub(crate) fn local_lan_ip() -> Option<IpAddr> {
+    let probes = [
+        PUBLIC_V4,
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 53),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 0, 1)), 53),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 53),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1)), 53),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 31, 1)), 53),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 50, 1)), 53),
+    ];
+    probes.iter().find_map(|to| route_ip(*to))
 }
 
 /// IPv4 映射的 IPv6 地址（双栈的 socket 看到的 IPv4 对端）写成 IPv4

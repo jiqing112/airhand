@@ -144,7 +144,14 @@ async fn serve<E: HostEvents>(
     let cert = Cert::generate().context("can't generate the lan certificate")?;
     let endpoint = Endpoint::server(server_config(&cert)?, config.bind)
         .with_context(|| format!("can't listen on {}", config.bind))?;
-    let local = endpoint.local_addr().unwrap_or(config.bind);
+    // 绑定的是 0.0.0.0 时，把本机在局域网里的真实地址报出去（托盘和主界面显示"连哪个 IP"）；
+    // 绑定了具体网卡就原样报
+    let local = match config.bind.ip() {
+        IpAddr::V4(v4) if v4.is_unspecified() => {
+            crate::direct::local_lan_ip().map_or(config.bind, |ip| SocketAddr::new(ip, config.bind.port()))
+        }
+        _ => endpoint.local_addr().unwrap_or(config.bind),
+    };
     info!(addr = %local, "listening for lan connections");
     events.lan_listening(local);
     let mut sessions: JoinSet<()> = JoinSet::new();

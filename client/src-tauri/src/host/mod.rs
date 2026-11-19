@@ -183,8 +183,8 @@ impl HostEvents for TrayStatus {
         self.0.send_modify(|s| {
             s.host.code = None;
             s.host.controllers.clear();
-            // 监听器跟着被控端走（macOS / Linux 上控制台打开时被控端是停着的）
-            s.host.lan = None;
+            // 局域网地址保留：控制台打开时（进程内模式）监听是暂停的，但地址还是对的，
+            // 主界面的提示条要一直显示给对方看
         });
     }
 

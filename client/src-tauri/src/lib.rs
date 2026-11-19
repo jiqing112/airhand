@@ -139,7 +139,13 @@ fn switch_services(app: &AppHandle, mode: Mode) {
             s.mode = mode;
             s.controller = ServerState::Connecting;
             if in_process {
+                // 控制台打开时被控端暂停（进程内模式）：监听地址 / 配对码 / 控制码保留——
+                // 主界面左下角的信息条要一直显示它们（被控端恢复时这些值本来就会重新发布）
+                let (lan, pairing, code) = (s.host.lan.clone(), s.host.pairing.clone(), s.host.code.clone());
                 s.host = HostStatus::default();
+                s.host.lan = lan;
+                s.host.pairing = pairing;
+                s.host.code = code;
             }
         });
         match mode {
@@ -446,7 +452,17 @@ fn app_info(hub: &StatusHub) -> AppInfo {
         server_fp: config::settings().server_fp.clone(),
         lan_listen: config::settings().lan.listen,
         lan_port: config::settings().lan.port,
-        lan_addr: hub.borrow().host.lan.map(|a| a.to_string()),
+        lan_addr: hub.borrow().host.lan.map(|a| a.to_string()).or_else(|| {
+            // 首次启动的竞态：监听器刚绑好、地址还在路上；配置开着就现场探测一次
+            config::settings()
+                .lan
+                .listen
+                .then(|| {
+                    airhand_link::direct::local_lan_ip()
+                        .map(|ip| std::net::SocketAddr::new(ip, config::settings().lan.port).to_string())
+                })
+                .flatten()
+        }),
         pairing_code: hub.borrow().host.pairing.clone(),
         code: hub.borrow().host.code.map(airhand_proto::format_code),
         pinned: config::pinned(),

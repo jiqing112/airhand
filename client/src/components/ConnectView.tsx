@@ -258,7 +258,7 @@ export function ConnectView() {
                 className="icon-btn subtle"
                 title={t("connect.localCodeChange")}
                 aria-label={t("connect.localCodeChange")}
-                disabled={busy}
+                disabled={busy || server.state !== "connected"}
                 onClick={() => void api.changeControlCode().catch(() => {})}
               >
                 <IconRefresh size={14} />

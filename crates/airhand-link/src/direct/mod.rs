@@ -88,7 +88,7 @@ pub(crate) fn route_ip(to: SocketAddr) -> Option<IpAddr> {
 /// 本机在局域网里的地址（局域网直连的提示用：绑定 0.0.0.0 时告诉用户连哪个 IP）。
 /// 先按默认路由（有公网出口时就是它），没有公网路由的隔离内网就试常见的私有网段——
 /// UDP 的 connect 只要本机配了那个网段的地址就会成功（目标存不存在无所谓）
-pub(crate) fn local_lan_ip() -> Option<IpAddr> {
+pub fn local_lan_ip() -> Option<IpAddr> {
     let probes = [
         PUBLIC_V4,
         SocketAddr::new(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 53),

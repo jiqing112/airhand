@@ -1,0 +1,142 @@
+# 构建桌面客户端（Windows / macOS / Linux）和中转服务器，发布到 GitHub Releases。
+#
+# 触发：
+# * push 一个 v 开头的 tag（例如 v0.2.3-fork.1）→ 构建并发布 Release；
+# * Actions 页面手动触发（workflow_dispatch）→ 只构建，产物在本次运行里下载。
+#
+# 中转服务器地址和证书指纹是编译进客户端的默认值（装机后 config.toml 可改）：
+# 在仓库的 Settings → Secrets and variables → Actions 里配置 AIRHAND_SERVER / AIRHAND_SERVER_FP，
+# 不配置就按代码里的默认值（127.0.0.1:4433，指纹留空 = 首次连接时信任）。
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  AIRHAND_SERVER: ${{ vars.AIRHAND_SERVER || '127.0.0.1:4433' }}
+  AIRHAND_SERVER_FP: ${{ vars.AIRHAND_SERVER_FP || '' }}
+
+jobs:
+  client:
+    name: client (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest
+            name: macos-arm64
+          - os: ubuntu-22.04
+            name: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Linux：Tauri 的依赖、托盘、声音、解码（见 docs/building.zh-CN.md）
+      - if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake pkg-config libssl-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libpulse-dev \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+            gstreamer1.0-plugins-bad gstreamer1.0-libav
+
+      - name: build
+        working-directory: client
+        shell: bash
+        run: |
+          npm install
+          npm run tauri build
+
+      - name: collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          B=client/src-tauri/target/release/bundle
+          V=$(node -p "require('./client/package.json').version")
+          case "${{ matrix.name }}" in
+            windows-x64)
+              cp "$B"/nsis/*-setup.exe "dist/Airhand_${V}_windows-x64-setup.exe" ;;
+            macos-arm64)
+              cp "$B"/dmg/*.dmg "dist/Airhand_${V}_macos-arm64.dmg" ;;
+            linux-x64)
+              cp client/src-tauri/target/release/airhand "dist/Airhand_${V}_linux-x64"
+              cp "$B"/deb/*.deb "dist/Airhand_${V}_linux-amd64.deb" ;;
+          esac
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-${{ matrix.name }}
+          path: dist/*
+
+  server:
+    name: server (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux-x64
+          - os: windows-latest
+            name: windows-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+
+      - name: build
+        working-directory: server
+        run: cargo build --release
+
+      - name: collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          EXE=""
+          [ -f target/release/airhand-server.exe ] && EXE=".exe"
+          tar czf "dist/airhand-server-${{ matrix.name }}.tar.gz" -C target/release "airhand-server$EXE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ matrix.name }}
+          path: dist/*
+
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [client, server]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*

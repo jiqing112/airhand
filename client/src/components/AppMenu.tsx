@@ -30,7 +30,7 @@ export function SettingsButton() {
       className="title-btn"
       title={t("menu.title")}
       aria-label={t("menu.title")}
-      onClick={() => store.setSettings(true)}
+      onClick={() => store.setSettings("server")}
     >
       <IconSettings size={17} />
     </button>
@@ -105,7 +105,7 @@ function ServerPanel({ onClose }: { onClose: () => void }) {
             )}
           </div>
           <div className="sp-addr mono">{app.server}</div>
-          <button className="text-btn" onClick={() => store.setSettings(true)}>
+          <button className="text-btn" onClick={() => store.setSettings("server")}>
             {t("settings.openSettings")}
           </button>
         </div>

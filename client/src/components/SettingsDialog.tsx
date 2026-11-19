@@ -8,18 +8,17 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
 import { setLang, useLang, useT, type Lang } from "../lib/i18n";
-import { store, useStore } from "../lib/store";
+import { store, useStore, type SettingsSection } from "../lib/store";
 import { IconCheck, IconCopy } from "./Icons";
 import { Logo } from "./Logo";
-
-type Section = "server" | "lan" | "general" | "about";
 
 export function SettingsDialog() {
   const t = useT();
   const open = useStore((s) => s.settings);
   const web = api.kind === "web";
-  const close = () => store.setSettings(false);
-  const [section, setSection] = useState<Section>("server");
+  const close = () => store.setSettings(null);
+  // 打开时带的节（齿轮 = 服务器，局域网信息条的"修改" = 局域网直连）；之后的切换在本地
+  const [section, setSection] = useState<SettingsSection>(open ?? "server");
 
   // Esc 关闭
   useEffect(() => {
@@ -33,15 +32,15 @@ export function SettingsDialog() {
   // 只在齿轮打开时渲染：软件启动展示的是主页面
   if (!open) return null;
 
-  const nav: { id: Section; label: string }[] = [
+  const nav: { id: SettingsSection; label: string }[] = [
     ...(!web
       ? [
-          { id: "server" as Section, label: t("settings.server") },
-          { id: "lan" as Section, label: t("settings.lan") },
+          { id: "server" as SettingsSection, label: t("settings.server") },
+          { id: "lan" as SettingsSection, label: t("settings.lan") },
         ]
       : []),
-    { id: "general" as Section, label: t("settings.general") },
-    { id: "about" as Section, label: t("settings.about") },
+    { id: "general" as SettingsSection, label: t("settings.general") },
+    { id: "about" as SettingsSection, label: t("settings.about") },
   ];
   const current = nav.some((n) => n.id === section) ? section : nav[0].id;
 

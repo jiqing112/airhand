@@ -3,7 +3,7 @@
 //
 // 输入的内容放在 store 里（Draft），切到别的标签再回来时还在。
 import { useEffect, useRef, useState } from "react";
-import type { SavedDevice } from "../lib/api";
+import { api, type SavedDevice } from "../lib/api";
 import { fmtCode, forgetDevice, isLanTarget, openSession, renameDevice, resetDraft, restoreDevice } from "../lib/actions";
 import { deviceKey, deviceTitle, matchDevice, relativeTime } from "../lib/devices";
 import { getLang, useT } from "../lib/i18n";
@@ -15,7 +15,7 @@ import { store, useSession, useStore } from "../lib/store";
 
 /** 这些问题要用户输入配对码（对方的身份变了也是：重新配对才认新的身份） */
 const PAIRING_PROBLEMS = new Set(["pairingRequired", "pairingFailed", "pairingUnavailable", "hostKeyChanged"]);
-import { IconBolt, IconCheck, IconClose, IconCopy, IconEye, IconEyeOff, IconMonitor, IconPencil, IconSearch, IconWarn } from "./Icons";
+import { IconBolt, IconCheck, IconClose, IconCopy, IconEye, IconEyeOff, IconMonitor, IconPencil, IconRefresh, IconSearch, IconWarn } from "./Icons";
 import { Logo } from "./Logo";
 
 export function ConnectView() {
@@ -27,8 +27,9 @@ export function ConnectView() {
   const devices = useStore((s) => s.devices);
   const app = useStore((s) => s.app);
   const targetInput = useRef<HTMLInputElement | null>(null);
-  /** 本机连接密码默认打码（像向日葵 / ToDesk）：点眼睛显示 */
+  /** 本机连接密码默认打码（像向日葵 / ToDesk）：点眼睛显示；随机生成后本地先更新 */
   const [showPw, setShowPw] = useState(false);
+  const [regenerated, setRegenerated] = useState<string | null>(null);
 
   // 新建连接标签总是有的时候才显示这一页；万一没有（例如状态不一致），补一个
   useEffect(() => {
@@ -83,6 +84,20 @@ export function ConnectView() {
     });
   };
 
+  /** 本机连接密码：设置里改过之后以它为准，否则用后控端发布过来的那个 */
+  const localPw = regenerated ?? app?.pairingCode ?? null;
+
+  /** 随机生成新的连接密码：后控端立刻生效，本界面马上显示新的（默认展开给用户核对） */
+  const regenerate = () => {
+    void api
+      .regenerateLanPassword()
+      .then((code: string) => {
+        setRegenerated(code);
+        setShowPw(true);
+      })
+      .catch(() => {});
+  };
+
   /** 我的设备：用上次的画质连（没记下画质的用默认预设）。局域网直连的设备不用等服务器 */
   const openDevice = (d: SavedDevice) => void openSession(d.code || d.addr || "", d.quality ?? presetSettings(preset, codec));
 
@@ -90,30 +105,6 @@ export function ConnectView() {
     <div className="newtab">
       <div className="nt-wrap">
         <section className="nt-card">
-          {app?.lanAddr && (
-            <div className="nt-local">
-              <div className="nt-local-row">
-                <span className="set-title">{t("connect.local")}</span>
-                <span className="mono">{app.lanAddr}</span>
-                <LocalCopy text={app.lanAddr} />
-              </div>
-              {app.pairingCode && (
-                <div className="nt-local-row">
-                  <span className="set-title">{t("connect.localPw")}</span>
-                  <span className="mono">{showPw ? app.pairingCode : "••••••"}</span>
-                  <button
-                    className="icon-btn subtle"
-                    title={t(showPw ? "connect.localHide" : "connect.localShow")}
-                    aria-label={t(showPw ? "connect.localHide" : "connect.localShow")}
-                    onClick={() => setShowPw((v) => !v)}
-                  >
-                    {showPw ? <IconEyeOff size={14} /> : <IconEye size={14} />}
-                  </button>
-                  <LocalCopy text={app.pairingCode} />
-                </div>
-              )}
-            </div>
-          )}
           <div className="nt-head">
             <div className="hero-icon">
               <Logo size={30} />
@@ -215,6 +206,48 @@ export function ConnectView() {
 
         <MyDevices onOpen={openDevice} disabled={busy || (!online && !lan)} />
       </div>
+
+      {app?.lanAddr && (
+        <div className="nt-local">
+          <div className="nt-local-row">
+            <span className="set-title">{t("connect.local")}</span>
+            <span className="mono">{app.lanAddr}</span>
+            <LocalCopy text={app.lanAddr} />
+          </div>
+          {localPw && (
+            <div className="nt-local-row">
+              <span className="set-title">{t("connect.localPw")}</span>
+              <span className="mono">{showPw ? localPw : "••••••"}</span>
+              <button
+                className="icon-btn subtle"
+                title={t(showPw ? "connect.localHide" : "connect.localShow")}
+                aria-label={t(showPw ? "connect.localHide" : "connect.localShow")}
+                onClick={() => setShowPw((v) => !v)}
+              >
+                {showPw ? <IconEyeOff size={14} /> : <IconEye size={14} />}
+              </button>
+              <LocalCopy text={localPw} />
+              <button
+                className="icon-btn subtle"
+                title={t("connect.localRandom")}
+                aria-label={t("connect.localRandom")}
+                disabled={busy}
+                onClick={regenerate}
+              >
+                <IconRefresh size={14} />
+              </button>
+              <button
+                className="icon-btn subtle"
+                title={t("connect.localEdit")}
+                aria-label={t("connect.localEdit")}
+                onClick={() => store.setSettings("lan")}
+              >
+                <IconPencil size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -91,6 +91,10 @@ pub enum ToAgent {
         port: u16,
         password: Option<String>,
     },
+    /// 控制台设置的局域网连接密码：用控制台生成的那个（它已经展示给用户了）
+    SetPairingCode {
+        code: String,
+    },
     /// 换一个配对码（暂停了的配对随之恢复）
     NewPairingCode,
     /// 忘掉所有配对过的控制端
@@ -247,6 +251,10 @@ async fn handle(msg: ToAgent, agent: &Agent) {
         }
         ToAgent::NewCode => {
             let _ = cmds.send(HostCmd::NewCode);
+        }
+        ToAgent::SetPairingCode { code } => {
+            let gate = agent.gate.clone();
+            let _ = tokio::task::spawn_blocking(move || gate.set_pairing_code(code)).await;
         }
         ToAgent::NewPairingCode => {
             let gate = agent.gate.clone();

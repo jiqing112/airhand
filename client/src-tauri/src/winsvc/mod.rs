@@ -335,7 +335,8 @@ fn set_run_key(on: bool) -> Result<()> {
     unsafe {
         if on {
             let exe = std::env::current_exe()?;
-            let value: Vec<u16> = format!("\"{}\"", exe.display())
+            // --hidden：开机自启动只进托盘，不弹主界面（用户双击 exe 才展示）
+            let value: Vec<u16> = format!("\"{}\" --hidden", exe.display())
                 .encode_utf16()
                 .chain([0])
                 .collect();

@@ -88,6 +88,8 @@ export default {
   "connect.title": "连接",
   "connect.local": "局域网直连",
   "connect.localPw": "连接密码",
+  "connect.localRandom": "随机生成新密码",
+  "connect.localEdit": "修改密码",
   "connect.localShow": "显示密码",
   "connect.localHide": "隐藏密码",
   "connect.target": "控制码或 IP 地址",

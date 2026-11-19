@@ -1261,6 +1261,7 @@ kbd {
   overflow-y: auto;
   display: flex;
   padding: 36px 24px;
+  position: relative;
 }
 .nt-wrap {
   position: relative;
@@ -1329,13 +1330,20 @@ kbd {
 /* 本机信息条：开着局域网监听时，把本机的地址和连接密码亮在卡片顶部（像向日葵 / ToDesk），
  * 密码默认打码，点眼睛显示；都可以一键复制 */
 .nt-local {
+  position: absolute;
+  left: var(--sp-4);
+  bottom: var(--sp-4);
+  z-index: 5;
   display: flex;
   flex-direction: column;
   gap: var(--sp-2);
   padding: var(--sp-3) var(--sp-4);
   border-radius: var(--r-m);
   border: 1px solid var(--edge);
-  background: var(--glass-1);
+  background: var(--pop);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-soft), var(--sheen);
 }
 .nt-local-row {
   display: flex;

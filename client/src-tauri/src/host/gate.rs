@@ -126,6 +126,23 @@ impl DesktopGate {
         self.publish();
     }
 
+    /// 设置一个指定的配对码（控制台设置里的"随机生成"：密码在控制台进程生成，
+    /// 经命名管道发过来；服务进程的门要同步更新内存和 config.toml）
+    pub fn set_pairing_code(&self, code: String) {
+        let mut st = self.state.lock().unwrap();
+        st.pairing = code.clone();
+        st.locked = false;
+        st.failures = 0;
+        st.pending = 0;
+        st.generation += 1;
+        if let Err(e) = config::save_pairing(&code, false) {
+            warn!("can't save the pairing code: {e:#}");
+        }
+        drop(st);
+        info!("pairing code set from the console");
+        self.publish();
+    }
+
     /// 忘掉所有配对过的控制端（托盘菜单）：它们下次要重新输入配对码
     pub fn forget_paired(&self) {
         let mut st = self.state.lock().unwrap();

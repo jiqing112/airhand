@@ -11,6 +11,9 @@ import type { RemoteSession } from "./session";
 /** "new" = 新建连接标签，"grid" = 多屏总览，其余为会话 id */
 export type View = "new" | "grid" | string;
 
+/** 设置对话框里的一节 */
+export type SettingsSection = "server" | "lan" | "general" | "about";
+
 /** 新建连接标签里正在输入的内容（切到别的标签再回来时还在） */
 export interface Draft {
   /** 要连的目标：6 位控制码（走服务器），或者局域网直连的地址 `IP:端口`（见 ConnectView 的输入） */
@@ -45,8 +48,8 @@ interface State {
   /** 我的设备能不能保存（桌面版：config.toml）；网页版只在本页面的内存里 */
   devicesSaved: boolean;
   confirm: Confirm;
-  /** 设置对话框开 / 关（标签栏的齿轮） */
-  settings: boolean;
+  /** 设置对话框：null = 关闭；开着时是要显示的节（齿轮 = 服务器，局域网信息条的"修改" = 局域网直连） */
+  settings: SettingsSection | null;
   server: ServerState;
   /**
    * 最近一次连不上服务器的原因。断开后会自动重试（状态在 disconnected 和 connecting 之间来回），
@@ -113,7 +116,7 @@ let state: State = {
   devices: [],
   devicesSaved: false,
   confirm: null,
-  settings: false,
+  settings: null,
   server: { state: "connecting" },
   serverProblem: null,
   app: null,
@@ -260,7 +263,7 @@ export const store = {
   setDevices: (devices: SavedDevice[], saved = state.devicesSaved) => set({ devices, devicesSaved: saved }),
 
   setConfirm: (confirm: Confirm) => set({ confirm }),
-  setSettings: (settings: boolean) => set({ settings }),
+  setSettings: (settings: SettingsSection | null) => set({ settings }),
 };
 
 export function useStore<T>(select: (s: State) => T): T {

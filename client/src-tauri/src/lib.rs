@@ -562,6 +562,38 @@ async fn save_lan(
     .map_err(Problem::failed)
 }
 
+/// 局域网直连的连接密码重新生成（6 位随机数）：控制台立刻展示新密码，
+/// 被控端的门同步更新（Windows 安装版经命名管道；本进程模式下写配置，被控端恢复时生效）
+#[tauri::command]
+async fn regenerate_lan_password(state: tauri::State<'_, AppState>) -> Result<String, Problem> {
+    let code = format!("{:06}", rand::random_range(0..1_000_000u32));
+    #[cfg(windows)]
+    if state.service_mode {
+        let connected = state.hub.borrow().service.is_some_and(|s| s.connected);
+        let sv = state.services.lock().unwrap();
+        match &sv.host {
+            Some(Hosting::Service(link)) if connected => {
+                link.send(winsvc::ipc::ToAgent::SetPairingCode { code: code.clone() });
+            }
+            _ => {
+                return Err(Problem::failed(
+                    "the Airhand service isn't reachable from this session",
+                ))
+            }
+        }
+        return Ok(code);
+    }
+    #[cfg(windows)]
+    let _ = &state;
+    let c = code.clone();
+    tauri::async_runtime::spawn_blocking(move || config::save_pairing(&c, false))
+        .await
+        .map_err(Problem::failed)?
+        .map_err(Problem::failed)?;
+    state.hub.send_modify(|s| s.host.pairing = Some(code.clone()));
+    Ok(code)
+}
+
 /// 设置改完立即重启（托盘进程重新读配置；Windows 安装版先重启系统服务里的被控端）
 #[tauri::command]
 async fn restart_app(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), Problem> {
@@ -627,7 +659,8 @@ pub fn run() {
     }
     init_logging();
     let Some(_instance) = single_instance::acquire() else {
-        // 已经有一个实例在运行（托盘里），直接退出
+        // 已经有一个实例在运行（托盘里）：让它把控制台打开 / 置前，然后退出
+        single_instance::signal_show();
         return;
     };
     // Windows：安装好的 Airhand 由系统服务运行被控端；发布版必须安装，调试构建直接运行时被控端在本进程里运行
@@ -674,6 +707,7 @@ pub fn run() {
             set_language,
             save_server,
             save_lan,
+            regenerate_lan_password,
             restart_app,
             clipboard_text,
             set_fullscreen,
@@ -696,11 +730,21 @@ pub fn run() {
                 Hosting::InProcess(HostService::start(hub.clone()))
             };
             app.state::<AppState>().services.lock().unwrap().host = Some(hosting);
-            // 仅调试构建：方便开发时直接进入控制端
+            // 双击 exe / 安装后首次启动：展示主界面（像向日葵、ToDesk）。
+            // --hidden 是开机自启动（注册表 Run 键带上的参数）：只进托盘，不弹窗口
+            let hidden_autostart = std::env::args().any(|a| a == "--hidden");
             let dev_controller =
                 cfg!(debug_assertions) && std::env::var_os("AIRHAND_DEV_CONTROLLER").is_some();
-            if dev_controller {
+            if dev_controller || !hidden_autostart {
                 set_mode(&handle, Mode::Controller);
+            }
+            // 已经在运行时又点了一次 exe：让第一实例把控制台打开
+            {
+                let h = handle.clone();
+                single_instance::on_show_request(move || {
+                    let h2 = h.clone();
+                    let _ = h.run_on_main_thread(move || set_mode(&h2, Mode::Controller));
+                });
             }
             #[cfg(target_os = "macos")]
             {

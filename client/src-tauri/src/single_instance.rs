@@ -89,6 +89,40 @@ pub fn acquire() -> Option<Guard> {
     Some(Guard { _port: port })
 }
 
+/// 已经有一个实例在运行时，让它把控制台窗口打开（第二实例调这个，然后退出）。
+/// Windows：命名事件对象；macOS / Linux 暂不支持（实例已运行时再点 exe 没有反应）
+#[cfg(windows)]
+pub fn signal_show() {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenEventW, SetEvent, EVENT_MODIFY_STATE};
+    use windows::core::w;
+    unsafe {
+        if let Ok(h) = OpenEventW(EVENT_MODIFY_STATE, false, w!("Local\\Airhand.ShowConsole")) {
+            let _ = SetEvent(h);
+            let _ = CloseHandle(h);
+        }
+    }
+}
+
+/// 第一实例：等"打开控制台"的信号（第二实例发来的），收到就在主线程上打开控制台。
+/// 返回的任务随进程退出自动结束
+#[cfg(windows)]
+pub fn on_show_request(f: impl Fn() + Send + 'static) {
+    use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject, INFINITE};
+    use windows::core::w;
+    std::thread::spawn(move || unsafe {
+        let Ok(event) = CreateEventW(None, false, false, w!("Local\\Airhand.ShowConsole")) else {
+            return;
+        };
+        loop {
+            if WaitForSingleObject(event, INFINITE) != windows::Win32::Foundation::WAIT_OBJECT_0 {
+                return;
+            }
+            f();
+        }
+    });
+}
+
 #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn acquire() -> Option<Guard> {
     Some(Guard {})

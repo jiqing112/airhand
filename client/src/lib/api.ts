@@ -335,6 +335,8 @@ export interface Backend {
   restartApp(): Promise<void>;
   /** 局域网直连监听开关 / 端口；password 给了就同时换配对码（它就是局域网的连接密码） */
   saveLan(listen: boolean, port: number, password: string | null): Promise<void>;
+  /** 随机生成新的连接密码（返回新密码；被控端的门立即更新） */
+  regenerateLanPassword(): Promise<string>;
   /** 切换界面语言（桌面版同时作用于托盘菜单） */
   setLanguage(lang: Lang): Promise<void>;
   /** 语言被切换（包括在托盘菜单里切换） */

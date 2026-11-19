@@ -239,8 +239,8 @@ fn open_console(app: &AppHandle) {
             .center()
             .incognito(true)
             .disable_drag_drop_handler()
-            .background_color(tauri::window::Color(9, 11, 16, 255))
-            .theme(Some(tauri::Theme::Dark));
+            .background_color(tauri::window::Color(241, 241, 239, 255))
+            .theme(Some(tauri::Theme::Light));
         // 无边框：标题栏就是控制台顶部的标签栏（拖动、双击最大化、窗口按钮都由界面处理）。
         // macOS 保留系统的红绿灯按钮，叠在标签栏左侧（垂直居中于 40px 高的标签栏）
         #[cfg(target_os = "macos")]

@@ -128,6 +128,14 @@ pub fn acquire() -> Option<Guard> {
     Some(Guard {})
 }
 
+/// 已经有一个实例在运行时，让它把控制台窗口打开：只有 Windows 实现了命名事件信号，
+/// macOS / Linux 上实例已运行时再点一次没有反应（空实现，调用方无条件调用）
+#[cfg(not(windows))]
+pub fn signal_show() {}
+
+#[cfg(not(windows))]
+pub fn on_show_request(_f: impl Fn() + Send + 'static) {}
+
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     #[test]

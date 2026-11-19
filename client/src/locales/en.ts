@@ -82,6 +82,10 @@ const en: Record<MsgKey, Msg> = {
   "confirm.cancel": "Cancel",
 
   "connect.title": "Connect",
+  "connect.local": "LAN direct",
+  "connect.localPw": "Password",
+  "connect.localShow": "Show password",
+  "connect.localHide": "Hide password",
   "connect.target": "Control code or IP address",
   "connect.prefer": "Prefers {codec}",
   "connect.busy": "Connecting…",

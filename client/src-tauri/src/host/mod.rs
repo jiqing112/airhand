@@ -183,6 +183,8 @@ impl HostEvents for TrayStatus {
         self.0.send_modify(|s| {
             s.host.code = None;
             s.host.controllers.clear();
+            // 监听器跟着被控端走（macOS / Linux 上控制台打开时被控端是停着的）
+            s.host.lan = None;
         });
     }
 

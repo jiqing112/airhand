@@ -15,7 +15,7 @@ import { store, useSession, useStore } from "../lib/store";
 
 /** 这些问题要用户输入配对码（对方的身份变了也是：重新配对才认新的身份） */
 const PAIRING_PROBLEMS = new Set(["pairingRequired", "pairingFailed", "pairingUnavailable", "hostKeyChanged"]);
-import { IconBolt, IconClose, IconMonitor, IconPencil, IconSearch, IconWarn } from "./Icons";
+import { IconBolt, IconCheck, IconClose, IconCopy, IconEye, IconEyeOff, IconMonitor, IconPencil, IconSearch, IconWarn } from "./Icons";
 import { Logo } from "./Logo";
 
 export function ConnectView() {
@@ -25,7 +25,10 @@ export function ConnectView() {
   const serverProblem = useStore((s) => s.serverProblem);
   const decoders = useStore((s) => s.decoders);
   const devices = useStore((s) => s.devices);
+  const app = useStore((s) => s.app);
   const targetInput = useRef<HTMLInputElement | null>(null);
+  /** 本机连接密码默认打码（像向日葵 / ToDesk）：点眼睛显示 */
+  const [showPw, setShowPw] = useState(false);
 
   // 新建连接标签总是有的时候才显示这一页；万一没有（例如状态不一致），补一个
   useEffect(() => {
@@ -87,6 +90,30 @@ export function ConnectView() {
     <div className="newtab">
       <div className="nt-wrap">
         <section className="nt-card">
+          {app?.lanAddr && (
+            <div className="nt-local">
+              <div className="nt-local-row">
+                <span className="set-title">{t("connect.local")}</span>
+                <span className="mono">{app.lanAddr}</span>
+                <LocalCopy text={app.lanAddr} />
+              </div>
+              {app.pairingCode && (
+                <div className="nt-local-row">
+                  <span className="set-title">{t("connect.localPw")}</span>
+                  <span className="mono">{showPw ? app.pairingCode : "••••••"}</span>
+                  <button
+                    className="icon-btn subtle"
+                    title={t(showPw ? "connect.localHide" : "connect.localShow")}
+                    aria-label={t(showPw ? "connect.localHide" : "connect.localShow")}
+                    onClick={() => setShowPw((v) => !v)}
+                  >
+                    {showPw ? <IconEyeOff size={14} /> : <IconEye size={14} />}
+                  </button>
+                  <LocalCopy text={app.pairingCode} />
+                </div>
+              )}
+            </div>
+          )}
           <div className="nt-head">
             <div className="hero-icon">
               <Logo size={30} />
@@ -189,6 +216,25 @@ export function ConnectView() {
         <MyDevices onOpen={openDevice} disabled={busy || (!online && !lan)} />
       </div>
     </div>
+  );
+}
+
+/** 本机信息条里的复制按钮：点一下变成对勾，一会儿恢复 */
+function LocalCopy({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const timer = window.setTimeout(() => setDone(false), 1500);
+    return () => clearTimeout(timer);
+  }, [done]);
+  return (
+    <button
+      className={`icon-btn subtle ${done ? "done" : ""}`}
+      aria-label="copy"
+      onClick={() => void navigator.clipboard?.writeText(text).then(() => setDone(true), () => {})}
+    >
+      {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
+    </button>
   );
 }
 

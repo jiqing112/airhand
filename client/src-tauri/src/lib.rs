@@ -426,6 +426,10 @@ struct AppInfo {
     /// 局域网直连监听（设置对话框回填用）
     lan_listen: bool,
     lan_port: u16,
+    /// 局域网直连正在监听的实际地址（开着 [lan] 且被控端在跑时有效；主界面显示给对方看）
+    lan_addr: Option<String>,
+    /// 本机的连接密码（配对码；access = Pairing 时才有，主界面可显示 / 隐藏）
+    pairing_code: Option<String>,
     pinned: bool,
     hostname: String,
     lang: Lang,
@@ -433,13 +437,15 @@ struct AppInfo {
     config_path: Option<String>,
 }
 
-fn app_info() -> AppInfo {
+fn app_info(hub: &StatusHub) -> AppInfo {
     AppInfo {
         version: config::VERSION,
         server: config::settings().server.clone(),
         server_fp: config::settings().server_fp.clone(),
         lan_listen: config::settings().lan.listen,
         lan_port: config::settings().lan.port,
+        lan_addr: hub.borrow().host.lan.map(|a| a.to_string()),
+        pairing_code: hub.borrow().host.pairing.clone(),
         pinned: config::pinned(),
         hostname: sysinfo::host_identity().0,
         lang: i18n::current(),

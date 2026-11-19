@@ -128,6 +128,10 @@ export interface AppInfo {
   /** 局域网直连监听（设置对话框回填用；网页版没有） */
   lanListen?: boolean;
   lanPort?: number;
+  /** 正在监听的实际地址（IP:端口，主界面显示给对方看）；没开监听 / 被控端没在跑时没有 */
+  lanAddr?: string | null;
+  /** 本机的连接密码（配对码）：主界面可显示 / 隐藏 */
+  pairingCode?: string | null;
   pinned: boolean;
   /** 被控端看到的本控制端名称（桌面版是计算机名） */
   hostname: string;

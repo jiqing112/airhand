@@ -118,7 +118,7 @@ async fn connection(tcp: TcpStream, gate: Arc<Gate>, app: AppHandle) {
     let setup = Setup {
         link: config::link(),
         identity,
-        info: serde_json::to_value(crate::app_info()).unwrap_or_default(),
+        info: serde_json::to_value(crate::app_info(&state.hub)).unwrap_or_default(),
         report: Some(status::controller_reporter(&state.hub)),
         clipboard: Some(|| Box::new(clipboard::ClipSync::new())),
     };

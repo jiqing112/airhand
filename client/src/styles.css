@@ -1288,6 +1288,36 @@ kbd {
   font-weight: 600;
   color: var(--text-2);
 }
+/* 本机信息条：开着局域网监听时，把本机的地址和连接密码亮在卡片顶部（像向日葵 / ToDesk），
+ * 密码默认打码，点眼睛显示；都可以一键复制 */
+.nt-local {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-m);
+  border: 1px solid var(--edge);
+  background: var(--glass-1);
+}
+.nt-local-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-s);
+}
+.nt-local-row .mono {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+.nt-local-row .icon-btn {
+  width: 26px;
+  height: 26px;
+}
+
 /* 目标输入：6 位控制码或者局域网地址（IP:端口），一个框两种目标。
  * 等宽数字让控制码好对位；地址长一点也不换行（往右滚） */
 .nt-target {

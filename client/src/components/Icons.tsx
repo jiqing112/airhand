@@ -149,6 +149,23 @@ export const IconHistory = (p: P) =>
   base(p, <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3.5 4v4h4M12 7.5V12l3 2" />);
 export const IconArrowRight = (p: P) => base(p, <path d="M5 12h14M13 6l6 6-6 6" />);
 export const IconPencil = (p: P) => base(p, <path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4" />);
+export const IconEye = (p: P) =>
+  base(
+    p,
+    <>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </>,
+  );
+export const IconEyeOff = (p: P) =>
+  base(
+    p,
+    <>
+      <path d="M9.9 5.9a9.8 9.8 0 0 1 2.1-.4c6 0 9.5 6.5 9.5 6.5a17.6 17.6 0 0 1-2.8 3.6M6.1 6.8A16.6 16.6 0 0 0 2.5 12S6 18.5 12 18.5a9.7 9.7 0 0 0 3.4-.6" />
+      <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+      <path d="M3.5 3.5l17 17" />
+    </>,
+  );
 /** 设置（标签栏右侧的主菜单） */
 export const IconSettings = (p: P) =>
   base(

@@ -1,0 +1,92 @@
+/* Design Token —— 全局的设计变量：色彩、圆角、间距、字号。组件只用 token，不写裸值，
+ * 风格从这里一处改、全局生效（各 token 的用法见 docs/ui.zh-CN.md）。
+ *
+ * 间距是 4 的倍数（--sp-N）；嵌套的容器用同一档内缩（父容器 padding = 子元素到父边缘的距离）；
+ * 圆角全套五档（--r-xs..--r-xl）加圆形（--r-full），按"件越小、圆角越小"选。
+ */
+:root {
+  /* 窗口最底层 */
+  --bg: #07080e;
+  /* 玻璃：由浅到深三档填充 */
+  --glass-1: rgba(255, 255, 255, 0.035);
+  --glass-2: rgba(255, 255, 255, 0.06);
+  --glass-3: rgba(255, 255, 255, 0.095);
+  /* 玻璃的描边 */
+  --edge: rgba(255, 255, 255, 0.08);
+  --edge-2: rgba(255, 255, 255, 0.12);
+  --edge-3: rgba(255, 255, 255, 0.2);
+  /* 玻璃顶部的高光 */
+  --sheen: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  /* 输入框、地址栏：比周围更深 */
+  --well: rgba(0, 0, 0, 0.26);
+  /* 弹出层：不透明度要够，盖在任何东西上（包括没有模糊效果的地方）都看得清 */
+  --pop: rgba(21, 24, 36, 0.86);
+  --blur: blur(24px) saturate(165%);
+  --line: rgba(255, 255, 255, 0.06);
+  --line-2: rgba(255, 255, 255, 0.1);
+  --line-3: rgba(255, 255, 255, 0.18);
+  --hover: rgba(255, 255, 255, 0.06);
+  --hover-2: rgba(255, 255, 255, 0.1);
+  --text: #eef0f8;
+  --text-2: #a7aec5;
+  --text-3: #6e7693;
+  --brand-1: #7b5cff;
+  --brand-2: #4c7dff;
+  --brand-3: #12d3ee;
+  --brand: linear-gradient(135deg, var(--brand-1), var(--brand-2) 55%, var(--brand-3));
+  --accent: #7c95ff;
+  --good: #35d49a;
+  --ok: #f5b84a;
+  --bad: #ff5d6c;
+  --danger: #e5484d;
+  --shadow: 0 22px 56px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+  --titlebar-h: 40px;
+  --toolbar-h: 46px;
+
+  /* ── 圆角：五档 + 圆。件越小、圆角越小：徽标 --r-xs，输入框 --r-s，按钮/菜单项 --r-m，
+     卡片/弹出层 --r-l，对话框/大面板 --r-xl，头像/圆点 --r-full ── */
+  --r-xs: 4px;
+  --r-s: 6px;
+  --r-m: 8px;
+  --r-l: 12px;
+  --r-xl: 16px;
+  --r-full: 999px;
+
+  /* ── 间距：4 的倍数。语义上按嵌套关系分配：同层元素之间用相邻两档里小的那档，
+     容器内缩用同一档（上下左右一致），分组之间用更大的一档 ── */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* ── 字号与字重：界面只有这几档（大标题 --fs-xl、区块标题 --fs-l、正文 --fs-m、辅助 --fs-s）── */
+  --fs-s: 12px;
+  --fs-m: 14px;
+  --fs-l: 16px;
+  --fs-xl: 20px;
+  --lh-tight: 1.3;
+  --lh-normal: 1.5;
+  --fw-medium: 560;
+  --fw-semibold: 650;
+
+  /* ── 焦点环与动效 ── */
+  --focus-ring: 2px solid var(--accent);
+  --t-fast: 120ms;
+  --t-normal: 180ms;
+  color-scheme: dark;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC",
+    system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+

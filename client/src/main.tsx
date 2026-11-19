@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { store } from "./lib/store";
+import "./styles/tokens.css";
+import "./styles/base.css";
 import "./styles.css";
 
 // 仅开发模式：方便用 DevTools / 自动化脚本查看会话状态（例如测量音画同步）

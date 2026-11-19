@@ -199,12 +199,6 @@ export function allowClose(): boolean {
   return true;
 }
 
-/** 切换为被控端（关闭控制台）。有会话时先问一下 */
-export function requestToHost() {
-  const n = activeSessions();
-  if (n === 0) return void quit("toHost");
-  store.setConfirm({ kind: "toHost", sessions: n });
-}
 
 /** 用户确认之后 */
 export async function quit(kind: "close" | "toHost") {

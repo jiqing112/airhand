@@ -196,6 +196,10 @@ class WebConsole extends ConsoleLink implements Backend {
 
   // 网页版没有被控端模式、托盘和窗口
   async switchToHost() {}
+
+  // 网页版的服务器就是当前页面的地址（airhand-web 的部署里配置）：设置对话框里不显示这项
+  async saveServer() {}
+  async restartApp() {}
   async setLanguage() {}
   onLangChanged() {
     return () => {};

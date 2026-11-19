@@ -5,7 +5,7 @@
 // airhand-web 在同一个端口上同时支持 HTTP 和 HTTPS，所以只要把地址换成 https:// 就行。
 import { api } from "../lib/api";
 import { useT } from "../lib/i18n";
-import { LangSwitch } from "./AppMenu";
+import { LangSwitch } from "./SettingsDialog";
 import { IconWarn } from "./Icons";
 
 export type Unsupported = "insecure" | "noWebCodecs";

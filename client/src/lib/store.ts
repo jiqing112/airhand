@@ -45,6 +45,8 @@ interface State {
   /** 我的设备能不能保存（桌面版：config.toml）；网页版只在本页面的内存里 */
   devicesSaved: boolean;
   confirm: Confirm;
+  /** 设置对话框开 / 关（标签栏的齿轮） */
+  settings: boolean;
   server: ServerState;
   /**
    * 最近一次连不上服务器的原因。断开后会自动重试（状态在 disconnected 和 connecting 之间来回），
@@ -111,6 +113,7 @@ let state: State = {
   devices: [],
   devicesSaved: false,
   confirm: null,
+  settings: false,
   server: { state: "connecting" },
   serverProblem: null,
   app: null,
@@ -257,6 +260,7 @@ export const store = {
   setDevices: (devices: SavedDevice[], saved = state.devicesSaved) => set({ devices, devicesSaved: saved }),
 
   setConfirm: (confirm: Confirm) => set({ confirm }),
+  setSettings: (settings: boolean) => set({ settings }),
 };
 
 export function useStore<T>(select: (s: State) => T): T {

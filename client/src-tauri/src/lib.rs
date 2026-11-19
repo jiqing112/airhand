@@ -421,6 +421,8 @@ pub(crate) fn on_tray_left_click(app: &AppHandle) {
 struct AppInfo {
     version: &'static str,
     server: String,
+    /// 编译 / 配置进来的证书指纹（"": 首次连接时信任，设置对话框回填用）
+    server_fp: String,
     pinned: bool,
     hostname: String,
     lang: Lang,
@@ -432,6 +434,7 @@ fn app_info() -> AppInfo {
     AppInfo {
         version: config::VERSION,
         server: config::settings().server.clone(),
+        server_fp: config::settings().server_fp.clone(),
         pinned: config::pinned(),
         hostname: sysinfo::host_identity().0,
         lang: i18n::current(),
@@ -484,6 +487,55 @@ async fn devices_save(
 fn set_language(app: AppHandle, lang: Lang) {
     set_lang(&app, lang);
 }
+
+/// 控制台的设置里改中转服务器（写 config.toml）。Windows 安装版：配置文件由服务里的被控端维护，
+/// 经命名管道交给它写；服务里的被控端读到的是启动时的配置，"立即重启"会先重启服务
+#[tauri::command]
+async fn save_server(
+    state: tauri::State<'_, AppState>,
+    server: String,
+    fp: String,
+) -> Result<(), Problem> {
+    #[cfg(windows)]
+    if state.service_mode {
+        let connected = state.hub.borrow().service.is_some_and(|s| s.connected);
+        let sv = state.services.lock().unwrap();
+        return match &sv.host {
+            Some(Hosting::Service(link)) if connected => {
+                link.send(winsvc::ipc::ToAgent::SaveServer { server, fp });
+                Ok(())
+            }
+            _ => Err(Problem::failed(
+                "the Airhand service isn't reachable from this session",
+            )),
+        };
+    }
+    #[cfg(windows)]
+    let _ = state;
+    tauri::async_runtime::spawn_blocking(move || config::save_server(&server, &fp))
+        .await
+        .map_err(Problem::failed)?
+        .map_err(Problem::failed)
+}
+
+/// 设置改完立即重启（托盘进程重新读配置；Windows 安装版先重启系统服务里的被控端）
+#[tauri::command]
+async fn restart_app(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), Problem> {
+    // 服务里的被控端读的是启动时的配置：停了再启，两个进程都拿到新地址
+    #[cfg(windows)]
+    if state.service_mode {
+        let _ = tauri::async_runtime::spawn_blocking(|| -> anyhow::Result<()> {
+            winsvc::stop()?;
+            winsvc::start()?;
+            Ok(())
+        })
+        .await;
+    }
+    let _ = &state;
+    app.restart();
+}
+
+/// 控制台和控制端服务之间的 WebSocket 地址：会话、画面、声音都走它，不走 Tauri 的 IPC（见 [`console`]）
 
 /// 控制台和控制端服务之间的 WebSocket 地址：会话、画面、声音都走它，不走 Tauri 的 IPC（见 [`console`]）
 #[tauri::command]
@@ -576,6 +628,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             console_url,
             set_language,
+            save_server,
+            restart_app,
             clipboard_text,
             set_fullscreen,
             window_fullscreen,

@@ -1107,6 +1107,114 @@ kbd {
   margin-top: 22px;
 }
 
+/* ───────── 设置对话框（SettingsDialog.tsx）───────── */
+.modal.settings {
+  width: min(480px, calc(100% - 40px));
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.set-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.set-head-text {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.set-section {
+  margin-top: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.set-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-s);
+  font-weight: var(--fw-semibold);
+  color: var(--text-3);
+  letter-spacing: 0.04em;
+}
+.set-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--r-s);
+  border: 1px solid var(--edge-2);
+  background: var(--well);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  outline: none;
+  transition:
+    border-color var(--t-fast),
+    box-shadow var(--t-fast);
+}
+.set-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--pl-tint);
+}
+.set-input.invalid {
+  border-color: rgba(211, 59, 64, 0.55);
+}
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.set-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.set-actions .primary-btn {
+  padding: var(--sp-2) var(--sp-4);
+  border-radius: var(--r-m);
+  font-size: var(--fs-s);
+}
+.set-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--good);
+  font-size: var(--fs-s);
+}
+.set-error {
+  color: var(--bad);
+  font-size: var(--fs-s);
+}
+.set-note {
+  color: var(--text-3);
+  font-size: var(--fs-s);
+}
+.set-about {
+  display: grid;
+  gap: var(--sp-2);
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+.set-keys {
+  display: flex;
+  flex-direction: column;
+}
+.set-keys summary {
+  cursor: pointer;
+  list-style: none;
+}
+.set-keys summary::-webkit-details-marker {
+  display: none;
+}
+.set-keys .am-keys {
+  margin-top: var(--sp-2);
+}
+
 /* ───────── 新建连接标签 ───────── */
 .newtab {
   flex: 1;

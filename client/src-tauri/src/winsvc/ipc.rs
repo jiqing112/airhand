@@ -79,6 +79,12 @@ pub enum ToAgent {
     SaveDevices {
         devices: Vec<crate::devices::Device>,
     },
+    /// 控制台的设置里改了中转服务器：服务进程写 config.toml（托盘没有写安装目录的权限）。
+    /// 服务里的被控端读到的是启动时的配置，服务重启后才用新地址（托盘的"立即重启"会先重启服务）
+    SaveServer {
+        server: String,
+        fp: String,
+    },
     /// 换一个配对码（暂停了的配对随之恢复）
     NewPairingCode,
     /// 忘掉所有配对过的控制端
@@ -266,6 +272,15 @@ async fn handle(msg: ToAgent, agent: &Agent) {
                 }
                 Ok(Err(e)) => warn!("can't change autostart: {e:#}"),
                 Err(e) => warn!("can't change autostart: {e}"),
+            }
+        }
+        ToAgent::SaveServer { server, fp } => {
+            let r =
+                tokio::task::spawn_blocking(move || crate::config::save_server(&server, &fp)).await;
+            match r {
+                Ok(Ok(())) => debug!("saved the relay server address"),
+                Ok(Err(e)) => warn!("can't save the relay server address: {e:#}"),
+                Err(e) => warn!("can't save the relay server address: {e}"),
             }
         }
         ToAgent::SaveDevices { devices } => {

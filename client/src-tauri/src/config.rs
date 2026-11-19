@@ -310,6 +310,29 @@ pub fn link() -> Arc<LinkConfig> {    static LINK: LazyLock<Arc<LinkConfig>> = L
     LINK.clone()
 }
 
+/// 控制台的设置里改中转服务器：写 `server` 和 `server_fp`（保留注释和别的键）。
+/// 指纹留空 = 首次连接时信任；写了就按 64 位十六进制校验（允许 `:` 和空格分隔，存成标准格式）。
+/// 只写文件：已经在跑的被控端 / 控制端服务读到的是启动时的配置，重启 Airhand 后生效
+pub fn save_server(server: &str, fp: &str) -> Result<()> {
+    let server = server.trim();
+    anyhow::ensure!(
+        !server.is_empty() && !server.contains(['\n', '\r']),
+        "the server address is empty"
+    );
+    let fp = match fp.trim() {
+        "" => String::new(),
+        f => match parse_fingerprint(f)? {
+            Some(v) => format_fingerprint(&v),
+            None => anyhow::bail!("the fingerprint isn't 64 hex digits"),
+        },
+    };
+    edit(|doc| {
+        doc["server"] = toml_edit::value(server);
+        doc["server_fp"] = toml_edit::value(fp);
+        Ok(())
+    })
+}
+
 /// 是否配置了固定的服务器证书指纹（否则第一次连接时记下，控制台据此说明）
 pub fn pinned() -> bool {
     link().pinned()

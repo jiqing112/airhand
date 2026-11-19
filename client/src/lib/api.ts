@@ -123,6 +123,8 @@ export interface AppInfo {
   version: string;
   /** 中转服务器地址 */
   server: string;
+  /** 配置的证书指纹（"": 首次连接时信任）；设置对话框回填用 */
+  serverFp?: string | null;
   pinned: boolean;
   /** 被控端看到的本控制端名称（桌面版是计算机名） */
   hostname: string;
@@ -320,6 +322,10 @@ export interface Backend {
   localClipboardText(): Promise<string>;
   /** 切换到被控端（只有桌面版） */
   switchToHost(): Promise<void>;
+  /** 保存中转服务器地址和证书指纹（桌面版：写进 config.toml；网页版就是当前页面的地址，用不上） */
+  saveServer(server: string, fp: string): Promise<void>;
+  /** 保存后立即重启（桌面版重新读配置；网页版什么也不做） */
+  restartApp(): Promise<void>;
   /** 切换界面语言（桌面版同时作用于托盘菜单） */
   setLanguage(lang: Lang): Promise<void>;
   /** 语言被切换（包括在托盘菜单里切换） */

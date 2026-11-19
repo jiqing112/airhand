@@ -13,9 +13,8 @@ export type View = "new" | "grid" | string;
 
 /** 新建连接标签里正在输入的内容（切到别的标签再回来时还在） */
 export interface Draft {
-  digits: string[];
-  /** 局域网直连的目标地址（和 digits 二选一，见 ConnectView 的输入） */
-  host: string;
+  /** 要连的目标：6 位控制码（走服务器），或者局域网直连的地址 `IP:端口`（见 ConnectView 的输入） */
+  target: string;
   preset: PresetId;
   /** 配对码（对方要求配对时才显示这一栏，见 ConnectView） */
   pairing: string;
@@ -97,8 +96,7 @@ function saveLocal(key: string, value: string) {
 }
 
 export const emptyDraft = (): Draft => ({
-  digits: Array(6).fill(""),
-  host: "",
+  target: "",
   preset: DEFAULT_PRESET,
   pairing: "",
   busy: false,

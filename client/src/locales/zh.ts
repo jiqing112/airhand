@@ -71,24 +71,19 @@ export default {
   "confirm.cancel": "取消",
 
   // 新建连接
-  "connect.title": "连接到远程电脑",
-  "connect.hint": "打开对方电脑上 Airhand 托盘图标的菜单（Windows 在右下角点右键，macOS 在屏幕顶部的菜单栏），即可看到 6 位控制码",
+  "connect.title": "连接",
+  "connect.target": "控制码或 IP 地址",
   "connect.prefer": "优先使用 {codec}",
   "connect.busy": "正在连接…",
   "connect.waitServer": "等待服务器连接…",
   "connect.go": "连接",
-  "connect.code": "控制码",
-  "connect.quality": "画质",
   "connect.clear": "清空",
-  "connect.addr": "局域网地址",
   "connect.pairing": "配对码",
   "connect.pairingHint": "对方托盘菜单里的 6 位配对码。配对之后这台电脑记住本机，下次不用再输",
   "connect.customQuality": "自定义画质",
 
   // 我的设备（新建连接页）
   "devices.title": "我的设备",
-  "devices.hint": "连接过的电脑自动保存在这里，点一下就连",
-  "devices.hintWeb": "网页版不保存，刷新页面后清空",
   "devices.empty": "连接过的电脑会自动保存在这里，下次点一下就能连上",
   "devices.search": "搜索名称或控制码",
   "devices.noMatch": "没有匹配的设备",

@@ -47,12 +47,7 @@ export async function openSession(target: string, settings: QualitySettings, opt
   }
   if (!st.draft) store.newTab();
   if (store.get().draft?.busy) return;
-  store.patchDraft({
-    digits: lan ? Array(6).fill("") : code.split(""),
-    host: lan ? target.trim() : "",
-    busy: true,
-    error: null,
-  });
+  store.patchDraft({ target: target.trim(), busy: true, error: null });
   // 我的设备里有：带着上次的重连凭证连（对方不在线时等它上线，而不是报错），连上之前就显示它的名字；
   // 只认记着的对方公钥（带着配对码时认配对码，连上之后记下对方现在的公钥）
   const saved = st.devices.find((d) => (d.code || d.addr) === (code || addr));

@@ -1,16 +1,17 @@
-// 新建连接标签：输入控制码连接；下面是"我的设备"（连接过的电脑，保存在 config.toml 里），点一下就连。
+// 新建连接标签：一个输入框连两种目标——6 位控制码（走服务器）或者局域网地址 IP:端口（直连，
+// 见 airhand_proto::lan）；下面是"我的设备"（连接过的电脑，保存在 config.toml 里），点一下就连。
 //
 // 输入的内容放在 store 里（Draft），切到别的标签再回来时还在。
 import { useEffect, useRef, useState } from "react";
 import type { SavedDevice } from "../lib/api";
-import { fmtCode, forgetDevice, openSession, renameDevice, resetDraft, restoreDevice } from "../lib/actions";
+import { fmtCode, forgetDevice, isLanTarget, openSession, renameDevice, resetDraft, restoreDevice } from "../lib/actions";
 import { deviceKey, deviceTitle, matchDevice, relativeTime } from "../lib/devices";
 import { getLang, useT } from "../lib/i18n";
 import { problemText, sessionStateText } from "../lib/messages";
 import { bestCodec } from "../lib/codec";
-import { CODEC_LABEL, PRESETS, matchPreset, presetDesc, presetName, presetSettings } from "../lib/presets";
+import { PRESETS, matchPreset, presetDesc, presetName, presetSettings } from "../lib/presets";
 import type { RemoteSession } from "../lib/session";
-import { store, useSession, useStore, type Draft } from "../lib/store";
+import { store, useSession, useStore } from "../lib/store";
 
 /** 这些问题要用户输入配对码（对方的身份变了也是：重新配对才认新的身份） */
 const PAIRING_PROBLEMS = new Set(["pairingRequired", "pairingFailed", "pairingUnavailable", "hostKeyChanged"]);
@@ -23,7 +24,7 @@ export function ConnectView() {
   const serverProblem = useStore((s) => s.serverProblem);
   const decoders = useStore((s) => s.decoders);
   const devices = useStore((s) => s.devices);
-  const inputs = useRef<(HTMLInputElement | null)[]>([]);
+  const targetInput = useRef<HTMLInputElement | null>(null);
 
   // 新建连接标签总是有的时候才显示这一页；万一没有（例如状态不一致），补一个
   useEffect(() => {
@@ -33,60 +34,47 @@ export function ConnectView() {
   const busy = draft?.busy ?? false;
   const error = draft?.error ?? null;
 
-  // 打开这一页时光标放在第一个空格里；连接失败后放在最后一格，方便改
+  // 打开这一页时光标就在输入框里
   useEffect(() => {
-    const digits = store.get().draft?.digits ?? [];
-    const i = digits.findIndex((d) => !d);
-    inputs.current[i < 0 ? 5 : i]?.focus();
+    targetInput.current?.focus();
   }, []);
   useEffect(() => {
     // 要配对码时光标留在配对码里
-    if (!busy && error && !PAIRING_PROBLEMS.has(error.kind)) inputs.current[5]?.focus();
+    if (!busy && error && !PAIRING_PROBLEMS.has(error.kind)) targetInput.current?.focus();
   }, [busy, error]);
 
   if (!draft) return null;
-  const { digits, preset, pairing } = draft;
+  const { target, preset, pairing } = draft;
   // 还不知道对方支持什么：先按本机能解码的选，连上后会按双方都支持的重新选（见 RemoteSession.fitCodec）
   const codec = bestCodec(decoders);
-  const code = digits.join("");
-  // 输入了地址（IP:端口 或 主机名:端口）就是局域网直连，不走服务器；否则按 6 位控制码走服务器
-  const host = draft.host.trim();
-  const lan = host.length > 0;
-  const codeReady = /^\d{6}$/.test(code) && code[0] !== "0";
-  // 地址：像样的主机名 / IP / IPv6，不以冒号结尾（端口可以省，连接时补默认端口）
-  const lanReady = /^[\w.:[\]-]+$/.test(host) && !host.endsWith(":");
+  const value = target.trim();
+  // 6 位数字 = 控制码（走服务器）；其余像样的写法 = 局域网直连的地址（端口可以省，连接时补默认端口）
+  const lan = isLanTarget(value);
+  const codeReady = /^\d{6}$/.test(value) && value[0] !== "0";
+  const lanReady = /^[\w.:[\]-]+$/.test(value) && !value.endsWith(":");
   const readyToConnect = lan ? lanReady : codeReady;
   const online = server.state === "connected";
   // 输入的是我的设备里的：告诉用户是哪台
-  const known = !lan && codeReady ? devices.find((d) => d.code === code) : undefined;
+  const known = !lan && codeReady ? devices.find((d) => d.code === value) : undefined;
 
   // 对方要配对码（或者已经粘贴 / 输入了配对码）：显示配对码一栏
   const pairingProblem = error && PAIRING_PROBLEMS.has(error.kind);
   const showPairing = pairingProblem || pairing.length > 0;
   const pairingReady = /^\d{6}$/.test(pairing);
 
-  const setFrom = (start: number, text: string) => {
+  /** 一次粘贴了控制码和配对码（12 位）：后面 6 位是配对码 */
+  const onPaste = (text: string) => {
     const only = text.replace(/\D/g, "");
-    if (!only) return;
-    const next = [...digits];
-    let i = start;
-    let used = 0;
-    for (const ch of only) {
-      if (i > 5) break;
-      next[i++] = ch;
-      used++;
+    if (only.length === 12) {
+      store.patchDraft({ target: only.slice(0, 6), pairing: only.slice(6), error: null });
+      return true;
     }
-    // 一次粘贴了控制码和配对码（12 位）：后面 6 位是配对码
-    const rest = only.slice(used);
-    const patch: Partial<Draft> = { digits: next, error: null };
-    if (start === 0 && rest.length === 6) patch.pairing = rest;
-    store.patchDraft(patch);
-    inputs.current[Math.min(i, 5)]?.focus();
+    return false;
   };
 
   const connect = () => {
     if (!readyToConnect || busy || (!online && !lan)) return;
-    void openSession(lan ? host : code, presetSettings(preset, codec), {
+    void openSession(value, presetSettings(preset, codec), {
       pairing: pairingReady ? pairing : null,
     });
   };
@@ -103,85 +91,34 @@ export function ConnectView() {
               <IconMonitor size={26} />
             </div>
             <h1>{t("connect.title")}</h1>
-            <p className="muted">{t("connect.hint")}</p>
           </div>
 
           <div className="nt-field">
-            <div className="nt-label">
-              <span>
-                {t("connect.code")}
-                {known && <span className="nt-known">{t("devices.known", { name: deviceTitle(known) })}</span>}
-              </span>
-              {code.length > 0 && !busy && (
-                <button className="text-btn" onClick={() => (resetDraft(), inputs.current[0]?.focus())}>
+            <input
+              ref={targetInput}
+              className={`nt-target ${error ? "invalid" : ""}`}
+              value={target}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={t("connect.target")}
+              disabled={busy}
+              aria-label={t("connect.target")}
+              onPaste={(e) => {
+                if (onPaste(e.clipboardData.getData("text"))) e.preventDefault();
+              }}
+              onChange={(e) => store.patchDraft({ target: e.target.value, error: null })}
+              onKeyDown={(e) => e.key === "Enter" && connect()}
+            />
+            <div className="nt-under">
+              {known && (
+                <span className="nt-known">{t("devices.known", { name: deviceTitle(known) })}</span>
+              )}
+              {target && !busy && (
+                <button className="text-btn" onClick={() => (resetDraft(), targetInput.current?.focus())}>
                   {t("connect.clear")}
                 </button>
               )}
             </div>
-            <div
-              className={`code-inputs ${error ? "invalid" : ""}`}
-              onPaste={(e) => (e.preventDefault(), setFrom(0, e.clipboardData.getData("text")))}
-            >
-              {digits.map((d, i) => (
-                <input
-                  key={i}
-                  ref={(el) => {
-                    inputs.current[i] = el;
-                  }}
-                  className={`code-box ${d ? "filled" : ""} ${i === 3 ? "gap" : ""}`}
-                  value={d}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={1}
-                  disabled={busy}
-                  aria-label={`${t("connect.code")} ${i + 1}`}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v.length > 1) return setFrom(i, v);
-                    if (/^\d$/.test(v)) setFrom(i, v);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Backspace") {
-                      e.preventDefault();
-                      const next = [...digits];
-                      if (next[i]) next[i] = "";
-                      else if (i > 0) {
-                        next[i - 1] = "";
-                        inputs.current[i - 1]?.focus();
-                      }
-                      store.patchDraft({ digits: next, error: null });
-                    } else if (e.key === "Delete") {
-                      e.preventDefault();
-                      const next = [...digits];
-                      next[i] = "";
-                      store.patchDraft({ digits: next, error: null });
-                    } else if (e.key === "ArrowLeft" && i > 0) inputs.current[i - 1]?.focus();
-                    else if (e.key === "ArrowRight" && i < 5) inputs.current[i + 1]?.focus();
-                    else if (e.key === "Home") inputs.current[0]?.focus();
-                    else if (e.key === "End") inputs.current[5]?.focus();
-                    else if (e.key === "Enter") connect();
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div className="nt-field">
-            <div className="nt-label">
-              <span>{t("connect.addr")}</span>
-            </div>
-            <input
-              className="pairing-input"
-              value={draft.host}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder="192.168.1.20"
-              disabled={busy}
-              aria-label={t("connect.addr")}
-              onChange={(e) => store.patchDraft({ host: e.target.value, error: null })}
-              onKeyDown={(e) => e.key === "Enter" && connect()}
-            />
           </div>
 
           {showPairing && (
@@ -204,14 +141,10 @@ export function ConnectView() {
                   if (e.key === "Enter") connect();
                 }}
               />
-              <div className="preset-desc muted small">{t("connect.pairingHint")}</div>
             </div>
           )}
 
           <div className="nt-field">
-            <div className="nt-label">
-              <span>{t("connect.quality")}</span>
-            </div>
             <div className="segmented presets">
               {PRESETS.map((p) => (
                 <button
@@ -224,9 +157,6 @@ export function ConnectView() {
                   {presetName(p.id)}
                 </button>
               ))}
-            </div>
-            <div className="preset-desc muted small">
-              {presetDesc(preset)} · {t("connect.prefer", { codec: CODEC_LABEL[codec] })}
             </div>
           </div>
 
@@ -251,11 +181,11 @@ export function ConnectView() {
 
           <button className="primary-btn" disabled={!readyToConnect || busy || (!online && !lan)} onClick={connect}>
             {busy ? <span className="spinner" /> : <IconBolt size={18} />}
-            <span>{busy ? t("connect.busy") : !online ? t("connect.waitServer") : t("connect.go")}</span>
+            <span>{busy ? t("connect.busy") : !online && !lan ? t("connect.waitServer") : t("connect.go")}</span>
           </button>
         </section>
 
-        <MyDevices onOpen={openDevice} disabled={busy || !online} />
+        <MyDevices onOpen={openDevice} disabled={busy || (!online && !lan)} />
       </div>
     </div>
   );
@@ -306,9 +236,7 @@ function MyDevices({ onOpen, disabled }: { onOpen: (d: SavedDevice) => void; dis
               onKeyDown={(e) => e.key === "Escape" && setQuery("")}
             />
           </label>
-        ) : (
-          <span className="small">{t(saved ? "devices.hint" : "devices.hintWeb")}</span>
-        )}
+        ) : null}
       </div>
 
       {removed && (

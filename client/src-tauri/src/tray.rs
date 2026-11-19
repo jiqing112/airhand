@@ -81,7 +81,8 @@ pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
         .icon(icon_offline())
         .tooltip("Airhand")
         .menu(&build_menu(app, &st)?)
-        // macOS 的菜单栏图标习惯上左键就弹出菜单；Windows / Linux 左键在控制端模式下打开控制台
+        // macOS 的菜单栏图标习惯上左键就弹出菜单；Windows / Linux 左键在控制端模式下打开控制台，
+        // 双击在任何模式下都打开控制台（和菜单里"打开控制台"一样）
         .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| crate::on_menu(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
@@ -89,13 +90,19 @@ pub fn create(app: &AppHandle) -> tauri::Result<TrayIcon> {
             if cfg!(target_os = "macos") {
                 return;
             }
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                crate::on_tray_left_click(tray.app_handle());
+            match event {
+                // 双击 = 打开控制台。被控端模式下单击故意不做事（双击才表示明确要开控制台）；
+                // DoubleClick 只有 Windows 会发出（Linux 上不会，行为不变）
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                } => crate::on_menu(tray.app_handle(), "console"),
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } => crate::on_tray_left_click(tray.app_handle()),
+                _ => {}
             }
         })
         .build(app)

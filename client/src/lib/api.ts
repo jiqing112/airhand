@@ -73,6 +73,8 @@ export type Problem =
   | { kind: "serverTimeout" }
   /** 重连时对方不在线（服务器确认过是之前连上的那台）：对方重新上线时会收到 onHostOnline */
   | { kind: "hostOffline" }
+  /** 连不上被控端（局域网直连：地址不对、对方没开 [lan] 监听、网络不通）。不自动重连 */
+  | { kind: "hostUnreachable"; detail: string }
   // 端到端加密（见 Rust 的 airhand_proto::handshake）
   /** 对方的身份（公钥）和记下的不一样：不自动重连，用户确认是对方重装之后输入配对码重新配对 */
   | { kind: "hostKeyChanged" }
@@ -131,14 +133,16 @@ export interface AppInfo {
 
 /** "我的设备"里的一台：连接过的电脑（与 Rust 端 devices::Device 对应，保存在 config.toml 的 [[device]] 里） */
 export interface SavedDevice {
-  /** 6 位控制码 */
+  /** 6 位控制码（局域网直连的设备没有：按 addr 连） */
   code: string;
+  /** 局域网直连的目标地址（`IP:端口`）；走服务器的设备为 null */
+  addr: string | null;
   /** 用户起的名字，null 表示用对方的设备名 */
   alias: string | null;
   /** 对方的设备名 */
   name: string;
   os: string;
-  /** 重连凭证：对方不在线时等它上线，不算猜码 */
+  /** 重连凭证：对方不在线时等它上线，不算猜码（局域网直连的设备没有） */
   resume: ResumeToken | null;
   /** 最后一次连上的时间（Unix 毫秒） */
   lastUsed: number;
@@ -156,10 +160,14 @@ export type ResumeToken = number[];
 
 export interface SessionInfo {
   sid: number;
+  /** 控制码（局域网直连的会话是空字符串：按 addr 连的） */
   code: string;
+  /** 局域网直连的目标地址；走服务器的会话没有（undefined） */
+  addr?: string | null;
   hostName: string;
   hostOs: string;
-  resume: ResumeToken;
+  /** 重连凭证（局域网直连没有：按 addr 再连一次） */
+  resume: ResumeToken | null;
   /** 对方的端到端加密公钥：记进我的设备，下次连时带上（ConnectOptions.hostKey） */
   hostKey: string;
   /** 安全码：对方托盘里显示的是同一个 */
@@ -167,11 +175,11 @@ export interface SessionInfo {
 }
 
 /**
- * 怎样连这台电脑（除了控制码），开始时的画质和声音。与 Rust 的 airhand_link::controller::ConnectOptions 对应，
- * 三种界面的 connect 都是这些字段加上控制码
+ * 怎样连这台电脑（除了目标本身），开始时的画质和声音。与 Rust 的 airhand_link::controller::ConnectOptions 对应，
+ * 三种界面的 connect 都是这些字段加上目标（控制码，或者局域网直连的 addr）
  */
 export interface ConnectOptions {
-  /** 重连凭证：之前连上时得到的，第一次连接时为 null */
+  /** 重连凭证：之前连上时得到的，第一次连接时为 null（局域网直连不用它） */
   resume: ResumeToken | null;
   /** 之前记下的对方公钥：只认它（对不上是 hostKeyChanged） */
   hostKey: string | null;
@@ -181,6 +189,8 @@ export interface ConnectOptions {
   settings: QualitySettings;
   /** 开始时要不要声音（同上） */
   audio: boolean;
+  /** 局域网直连的目标地址（`IP:端口`）：有它就不走服务器（code 被忽略） */
+  addr?: string | null;
 }
 
 /** 被控端的平台，与 airhand_proto::session::Platform 对应（对方的版本更新、报了这边不认识的平台时是 linux） */

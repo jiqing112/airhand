@@ -326,8 +326,9 @@ export class ConsoleLink {
     // 先告诉 Worker 这个 ch 的画面画在哪里：会话的第一批数据可能比 connect 的回复先到
     this.post({ t: "bind", ch, id: view.id });
     try {
-      // connect 命令是控制码、ch、剪贴板开关加上 ConnectOptions 的字段（和 Android 一样）
-      const info = await this.call<SessionInfo>("connect", { ...opts, code, ch, clipboard });
+      // connect 命令是控制码（或者局域网直连的 addr）、ch、剪贴板开关加上 ConnectOptions 的字段（和 Android 一样）
+      const { addr, ...rest } = opts;
+      const info = await this.call<SessionInfo>("connect", { ...rest, code, addr: addr ?? undefined, ch, clipboard });
       chan.sid = info.sid;
       if (this.chans.get(ch) === chan) this.post({ t: "sid", ch, sid: info.sid });
       return info;

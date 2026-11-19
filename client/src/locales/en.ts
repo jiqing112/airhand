@@ -76,6 +76,7 @@ const en: Record<MsgKey, Msg> = {
   "connect.code": "Control code",
   "connect.quality": "Quality",
   "connect.clear": "Clear",
+  "connect.addr": "LAN address",
   "connect.pairing": "Pairing code",
   "connect.pairingHint": "The 6-digit pairing code in the remote computer's tray menu. Once paired, that computer remembers this one",
   "connect.customQuality": "Custom quality",
@@ -291,6 +292,7 @@ const en: Record<MsgKey, Msg> = {
   "problem.hostBusy": "The remote computer has reached its session limit",
   "problem.serverTimeout": "The server didn't respond in time",
   "problem.hostOffline": "The remote computer is offline",
+  "problem.hostUnreachable": "Can’t reach the host ({detail})",
   "problem.hostKeyChanged":
     "The remote computer's identity differs from the last connection: it may have reinstalled Airhand, or someone may be impersonating it. Once you've confirmed it was reinstalled, enter its current pairing code to pair again (a phone has no pairing code: remove it from My devices and connect again)",
   "problem.pairingRequired": "First connection to this computer: enter its pairing code, shown in the Airhand tray menu on that computer",

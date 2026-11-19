@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { SavedDevice } from "../lib/api";
 import { fmtCode, forgetDevice, openSession, renameDevice, resetDraft, restoreDevice } from "../lib/actions";
-import { deviceTitle, matchDevice, relativeTime } from "../lib/devices";
+import { deviceKey, deviceTitle, matchDevice, relativeTime } from "../lib/devices";
 import { getLang, useT } from "../lib/i18n";
 import { problemText, sessionStateText } from "../lib/messages";
 import { bestCodec } from "../lib/codec";
@@ -49,10 +49,16 @@ export function ConnectView() {
   // 还不知道对方支持什么：先按本机能解码的选，连上后会按双方都支持的重新选（见 RemoteSession.fitCodec）
   const codec = bestCodec(decoders);
   const code = digits.join("");
-  const ready = /^\d{6}$/.test(code) && code[0] !== "0";
+  // 输入了地址（IP:端口 或 主机名:端口）就是局域网直连，不走服务器；否则按 6 位控制码走服务器
+  const host = draft.host.trim();
+  const lan = host.length > 0;
+  const codeReady = /^\d{6}$/.test(code) && code[0] !== "0";
+  // 地址：像样的主机名 / IP / IPv6，不以冒号结尾（端口可以省，连接时补默认端口）
+  const lanReady = /^[\w.:[\]-]+$/.test(host) && !host.endsWith(":");
+  const readyToConnect = lan ? lanReady : codeReady;
   const online = server.state === "connected";
   // 输入的是我的设备里的：告诉用户是哪台
-  const known = ready ? devices.find((d) => d.code === code) : undefined;
+  const known = !lan && codeReady ? devices.find((d) => d.code === code) : undefined;
 
   // 对方要配对码（或者已经粘贴 / 输入了配对码）：显示配对码一栏
   const pairingProblem = error && PAIRING_PROBLEMS.has(error.kind);
@@ -79,12 +85,14 @@ export function ConnectView() {
   };
 
   const connect = () => {
-    if (!ready || busy || !online) return;
-    void openSession(code, presetSettings(preset, codec), { pairing: pairingReady ? pairing : null });
+    if (!readyToConnect || busy || (!online && !lan)) return;
+    void openSession(lan ? host : code, presetSettings(preset, codec), {
+      pairing: pairingReady ? pairing : null,
+    });
   };
 
-  /** 我的设备：用上次的画质连（没记下画质的用默认预设） */
-  const openDevice = (d: SavedDevice) => void openSession(d.code, d.quality ?? presetSettings(preset, codec));
+  /** 我的设备：用上次的画质连（没记下画质的用默认预设）。局域网直连的设备不用等服务器 */
+  const openDevice = (d: SavedDevice) => void openSession(d.code || d.addr || "", d.quality ?? presetSettings(preset, codec));
 
   return (
     <div className="newtab">
@@ -159,6 +167,23 @@ export function ConnectView() {
             </div>
           </div>
 
+          <div className="nt-field">
+            <div className="nt-label">
+              <span>{t("connect.addr")}</span>
+            </div>
+            <input
+              className="pairing-input"
+              value={draft.host}
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="192.168.1.20"
+              disabled={busy}
+              aria-label={t("connect.addr")}
+              onChange={(e) => store.patchDraft({ host: e.target.value, error: null })}
+              onKeyDown={(e) => e.key === "Enter" && connect()}
+            />
+          </div>
+
           {showPairing && (
             <div className="nt-field">
               <div className="nt-label">
@@ -224,7 +249,7 @@ export function ConnectView() {
             </div>
           )}
 
-          <button className="primary-btn" disabled={!ready || busy || !online} onClick={connect}>
+          <button className="primary-btn" disabled={!readyToConnect || busy || (!online && !lan)} onClick={connect}>
             {busy ? <span className="spinner" /> : <IconBolt size={18} />}
             <span>{busy ? t("connect.busy") : !online ? t("connect.waitServer") : t("connect.go")}</span>
           </button>
@@ -260,7 +285,7 @@ function MyDevices({ onOpen, disabled }: { onOpen: (d: SavedDevice) => void; dis
     // 第一次用：告诉用户连过的电脑会出现在这里
     return saved ? <p className="nt-empty muted small">{t("devices.empty")}</p> : null;
   }
-  const open = new Map(sessions.map((s) => [s.code, s]));
+  const open = new Map(sessions.map((s) => [s.code || s.addr || "", s]));
   const shown = devices.filter((d) => matchDevice(d, query));
 
   return (
@@ -304,15 +329,15 @@ function MyDevices({ onOpen, disabled }: { onOpen: (d: SavedDevice) => void; dis
       <div className="device-list">
         {shown.map((d) => (
           <DeviceItem
-            key={d.code}
+            key={deviceKey(d)}
             d={d}
-            session={open.get(d.code)}
+            session={open.get(deviceKey(d))}
             disabled={disabled}
-            editing={editing === d.code}
+            editing={editing === deviceKey(d)}
             onOpen={() => onOpen(d)}
-            onEdit={(on) => setEditing(on ? d.code : null)}
+            onEdit={(on) => setEditing(on ? deviceKey(d) : null)}
             onForget={() => {
-              forgetDevice(d.code);
+              forgetDevice(deviceKey(d));
               setRemoved(d);
             }}
           />
@@ -353,7 +378,7 @@ function DeviceItem({
     : relativeTime(d.lastUsed, Date.now(), getLang() === "zh" ? "zh-CN" : "en");
   const p = d.quality ? matchPreset(d.quality) : null;
   const finish = (value: string | null) => {
-    if (value !== null) renameDevice(d.code, value);
+    if (value !== null) renameDevice(deviceKey(d), value);
     onEdit(false);
   };
 
@@ -362,7 +387,7 @@ function DeviceItem({
       role="button"
       tabIndex={0}
       className={`device-item ${session ? "open" : ""} ${off ? "disabled" : ""} ${editing ? "editing" : ""}`}
-      title={[title !== d.name && d.name, d.os, fmtCode(d.code)].filter(Boolean).join(" · ")}
+      title={[title !== d.name && d.name, d.os, d.code ? fmtCode(d.code) : d.addr].filter(Boolean).join(" · ")}
       onClick={() => !off && !editing && onOpen()}
       onKeyDown={(e) => e.key === "Enter" && !off && !editing && onOpen()}
     >
@@ -388,7 +413,7 @@ function DeviceItem({
         )}
         <span className="device-sub">
           {session && <span className={`dot ${session.state}`} />}
-          {fmtCode(d.code)}
+          {d.code ? fmtCode(d.code) : d.addr}
           {status && ` · ${status}`}
           {!session && d.quality && ` · ${p ? presetName(p) : t("connect.customQuality")}`}
         </span>

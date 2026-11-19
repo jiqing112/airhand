@@ -80,6 +80,7 @@ export default {
   "connect.code": "控制码",
   "connect.quality": "画质",
   "connect.clear": "清空",
+  "connect.addr": "局域网地址",
   "connect.pairing": "配对码",
   "connect.pairingHint": "对方托盘菜单里的 6 位配对码。配对之后这台电脑记住本机，下次不用再输",
   "connect.customQuality": "自定义画质",
@@ -301,6 +302,7 @@ export default {
   "problem.hostBusy": "对方当前会话数已满",
   "problem.serverTimeout": "服务器响应超时",
   "problem.hostOffline": "对方已离线",
+  "problem.hostUnreachable": "连不上对方（{detail}）",
   // 端到端加密（见 Rust 的 airhand_proto::handshake）
   "problem.hostKeyChanged":
     "对方电脑的身份和上次连接时不一样：可能是对方重装了 Airhand，也可能有人在冒充它。确认是对方重装之后，输入对方现在的配对码重新配对（手机没有配对码：在我的设备里删掉它再连）",

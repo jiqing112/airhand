@@ -90,6 +90,8 @@ let nextId = 1;
 export class RemoteSession {
   readonly id = `s${nextId++}`;
   readonly code: string;
+  /** 局域网直连的目标地址（`IP:端口`）：有它就不走服务器（code 是空的） */
+  readonly addr: string | null;
   readonly canvas: HTMLCanvasElement;
 
   state: SessionState = "connecting";
@@ -218,9 +220,12 @@ export class RemoteSession {
     settings: QualitySettings,
     saved?: { resume: ResumeToken | null; name: string; os: string; hostKey?: string | null },
     pairing?: string | null,
+    addr?: string | null,
   ) {
     this.code = code;
-    this.codeNum = Number(code.replace(/\D/g, ""));
+    this.addr = addr ?? null;
+    // 局域网直连没有控制码，也不会有"对方上线"的通知（连不上就是连不上，见 hostOnline）
+    this.codeNum = addr ? 0 : Number(code.replace(/\D/g, ""));
     this.settings = settings;
     if (saved) {
       this.resume = saved.resume;
@@ -305,7 +310,7 @@ export class RemoteSession {
     try {
       info = await api.connect(
         this.code,
-        { resume: this.resume, hostKey: this.hostKey, pairing: this.pairing, settings: sent, audio },
+        { resume: this.resume, hostKey: this.hostKey, pairing: this.pairing, settings: sent, audio, addr: this.addr },
         this.view,
         onEvent,
         this.clipboardSync,

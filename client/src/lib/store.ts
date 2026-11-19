@@ -14,6 +14,8 @@ export type View = "new" | "grid" | string;
 /** 新建连接标签里正在输入的内容（切到别的标签再回来时还在） */
 export interface Draft {
   digits: string[];
+  /** 局域网直连的目标地址（和 digits 二选一，见 ConnectView 的输入） */
+  host: string;
   preset: PresetId;
   /** 配对码（对方要求配对时才显示这一栏，见 ConnectView） */
   pairing: string;
@@ -96,6 +98,7 @@ function saveLocal(key: string, value: string) {
 
 export const emptyDraft = (): Draft => ({
   digits: Array(6).fill(""),
+  host: "",
   preset: DEFAULT_PRESET,
   pairing: "",
   busy: false,
@@ -264,8 +267,8 @@ export function useStore<T>(select: (s: State) => T): T {
 
 /** 会话显示的名字：在我的设备里起过名字就用它，否则用对方的设备名，都没有就是控制码 */
 export function useSessionTitle(s: RemoteSession): string {
-  const alias = useStore((st) => st.devices.find((d) => d.code === s.code)?.alias ?? null);
-  return alias || s.hostName || fmtCode(s.code);
+  const alias = useStore((st) => st.devices.find((d) => (d.code || d.addr) === (s.code || s.addr))?.alias ?? null);
+  return alias || s.hostName || (s.code ? fmtCode(s.code) : s.addr || "");
 }
 
 /** 订阅单个会话的变化 */

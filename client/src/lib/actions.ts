@@ -1,6 +1,7 @@
 // 跨组件的操作：连接、我的设备、重新打开关闭的会话、关闭控制台 / 切换为被控端（先确认）、全屏。
 import { api, toProblem, type QualitySettings, type SavedDevice } from "./api";
 import * as devices from "./devices";
+import { deviceKey } from "./devices";
 import { OS } from "./platform";
 import { RemoteSession } from "./session";
 import { emptyDraft, store } from "./store";
@@ -18,13 +19,23 @@ export interface OpenOptions {
   pairing?: string | null;
 }
 
+/** 输入的是 6 位数字 = 控制码（走服务器）；否则是局域网直连的地址（`IP:端口`，见 airhand_proto::lan） */
+export const isLanTarget = (target: string) => !/^\d{6}$/.test(target);
+
+/** 局域网直连的地址补上默认端口（没写端口时） */
+const withPort = (addr: string) => (addr.includes(":") ? addr : `${addr}:4433`);
+
 /**
- * 连接控制码为 `code` 的电脑，在新建连接标签里显示进度和错误，连上后这个标签变成会话标签。
+ * 连接一台电脑：`target` 是 6 位控制码（走服务器），或者局域网直连的地址（`IP:端口`）。
+ * 在新建连接标签里显示进度和错误，连上后这个标签变成会话标签。
  * 已经有这台电脑的标签：切过去（断开了就重新连接）。
  */
-export async function openSession(code: string, settings: QualitySettings, opts: OpenOptions = {}): Promise<void> {
+export async function openSession(target: string, settings: QualitySettings, opts: OpenOptions = {}): Promise<void> {
+  const lan = isLanTarget(target);
+  const code = lan ? "" : target;
+  const addr = lan ? withPort(target.trim()) : null;
   const st = store.get();
-  const dup = st.sessions.find((s) => s.code === code);
+  const dup = st.sessions.find((s) => (s.code || s.addr) === (code || addr));
   if (dup) {
     if (st.view === "new") store.closeDraft();
     store.setView(dup.id);
@@ -36,11 +47,16 @@ export async function openSession(code: string, settings: QualitySettings, opts:
   }
   if (!st.draft) store.newTab();
   if (store.get().draft?.busy) return;
-  store.patchDraft({ digits: code.split(""), busy: true, error: null });
+  store.patchDraft({
+    digits: lan ? Array(6).fill("") : code.split(""),
+    host: lan ? target.trim() : "",
+    busy: true,
+    error: null,
+  });
   // 我的设备里有：带着上次的重连凭证连（对方不在线时等它上线，而不是报错），连上之前就显示它的名字；
   // 只认记着的对方公钥（带着配对码时认配对码，连上之后记下对方现在的公钥）
-  const saved = st.devices.find((d) => d.code === code);
-  const s = new RemoteSession(code, settings, saved, opts.pairing);
+  const saved = st.devices.find((d) => (d.code || d.addr) === (code || addr));
+  const s = new RemoteSession(code, settings, saved, opts.pairing, addr);
   pending = s;
   try {
     await s.open();
@@ -130,6 +146,7 @@ function setDevices(list: SavedDevice[]) {
 export function rememberSession(s: RemoteSession) {
   const seen = {
     code: s.code,
+    addr: s.addr,
     name: s.hostName,
     os: s.hostOs,
     resume: s.resumeToken,
@@ -141,12 +158,13 @@ export function rememberSession(s: RemoteSession) {
 
 /** 画质改了：下次用同样的画质连（只更新已经记下的） */
 function rememberQuality(s: RemoteSession) {
-  setDevices(devices.patchDevice(store.get().devices, s.code, { quality: s.settings }));
+  setDevices(devices.patchDevice(store.get().devices, deviceKey({ code: s.code, addr: s.addr }), { quality: s.settings }));
 }
 
-export const renameDevice = (code: string, name: string) =>
-  setDevices(devices.renameDevice(store.get().devices, code, name));
-export const forgetDevice = (code: string) => setDevices(devices.forgetDevice(store.get().devices, code));
+/** 设备操作用它的键（控制码，或者局域网直连的地址） */
+export const renameDevice = (key: string, name: string) =>
+  setDevices(devices.renameDevice(store.get().devices, key, name));
+export const forgetDevice = (key: string) => setDevices(devices.forgetDevice(store.get().devices, key));
 export const restoreDevice = (d: SavedDevice) => setDevices(devices.restoreDevice(store.get().devices, d));
 
 /** 等正在保存的存完（关闭控制台之前） */

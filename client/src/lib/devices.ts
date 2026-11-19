@@ -8,8 +8,12 @@ export const MAX_DEVICES = 50;
 /** 控制码显示成 "123 456" */
 export const fmtCode = (code: string) => (code.length === 6 ? `${code.slice(0, 3)} ${code.slice(3)}` : code);
 
-/** 显示的名字：自己起的名字 > 对方的设备名 > 控制码 */
-export const deviceTitle = (d: SavedDevice) => d.alias?.trim() || d.name.trim() || fmtCode(d.code);
+/** 显示的名字：自己起的名字 > 对方的设备名 > 控制码（局域网直连的设备：地址） */
+export const deviceTitle = (d: SavedDevice) =>
+  d.alias?.trim() || d.name.trim() || (d.code ? fmtCode(d.code) : d.addr || "");
+
+/** 一台设备的键：控制码（走服务器）或者地址（局域网直连，code 是空的） */
+export const deviceKey = (d: Pick<SavedDevice, "code" | "addr">) => d.code || d.addr || "";
 
 /** 最近连过的在前面 */
 export const sortDevices = (list: SavedDevice[]) => [...list].sort((a, b) => b.lastUsed - a.lastUsed);
@@ -19,6 +23,8 @@ export function remember(
   list: SavedDevice[],
   seen: {
     code: string;
+    /** 局域网直连的目标地址（code 是空的设备靠它区分） */
+    addr?: string | null;
     name: string;
     os: string;
     resume: ResumeToken | null;
@@ -27,9 +33,11 @@ export function remember(
   },
   now: number,
 ): SavedDevice[] {
-  const old = list.find((d) => d.code === seen.code);
+  const key = seen.code || seen.addr || "";
+  const old = list.find((d) => deviceKey(d) === key);
   const d: SavedDevice = {
     code: seen.code,
+    addr: seen.addr ?? old?.addr ?? null,
     alias: old?.alias ?? null,
     name: seen.name.trim() || old?.name || "",
     os: seen.os.trim() || old?.os || "",
@@ -39,24 +47,25 @@ export function remember(
     // 对方的公钥：连上时确认过的（第一次连上、或者用户信任了新的身份）代替旧的
     hostKey: seen.hostKey ?? old?.hostKey ?? null,
   };
-  return sortDevices([d, ...list.filter((x) => x.code !== seen.code)]).slice(0, MAX_DEVICES);
+  return sortDevices([d, ...list.filter((x) => deviceKey(x) !== key)]).slice(0, MAX_DEVICES);
 }
 
 /** 改一台的名字或画质（列表里没有就什么也不变） */
-export function patchDevice(list: SavedDevice[], code: string, patch: Partial<Pick<SavedDevice, "alias" | "quality">>) {
-  if (!list.some((d) => d.code === code)) return list;
-  return list.map((d) => (d.code === code ? { ...d, ...patch } : d));
+export function patchDevice(list: SavedDevice[], key: string, patch: Partial<Pick<SavedDevice, "alias" | "quality">>) {
+  if (!list.some((d) => deviceKey(d) === key)) return list;
+  return list.map((d) => (deviceKey(d) === key ? { ...d, ...patch } : d));
 }
 
 /** 重命名：和对方的设备名一样、或者清空，就是不另起名字 */
-export function renameDevice(list: SavedDevice[], code: string, name: string) {
-  const d = list.find((x) => x.code === code);
+export function renameDevice(list: SavedDevice[], key: string, name: string) {
+  const d = list.find((x) => deviceKey(x) === key);
   if (!d) return list;
   const n = name.trim();
-  return patchDevice(list, code, { alias: n && n !== d.name ? n : null });
+  return patchDevice(list, key, { alias: n && n !== d.name ? n : null });
 }
 
-export const forgetDevice = (list: SavedDevice[], code: string) => list.filter((d) => d.code !== code);
+export const forgetDevice = (list: SavedDevice[], key: string) =>
+  list.filter((d) => deviceKey(d) !== key);
 
 /** 撤销移除：放回原来的位置（按最后连接时间） */
 export const restoreDevice = (list: SavedDevice[], d: SavedDevice) =>
@@ -70,6 +79,7 @@ export function matchDevice(d: SavedDevice, query: string): boolean {
   return (
     deviceTitle(d).toLowerCase().includes(q) ||
     d.name.toLowerCase().includes(q) ||
+    d.addr?.toLowerCase().includes(q) ||
     (/^\d+$/.test(digits) && d.code.includes(digits))
   );
 }

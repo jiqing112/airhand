@@ -16,6 +16,7 @@ import { store, useSession, useStore } from "../lib/store";
 /** 这些问题要用户输入配对码（对方的身份变了也是：重新配对才认新的身份） */
 const PAIRING_PROBLEMS = new Set(["pairingRequired", "pairingFailed", "pairingUnavailable", "hostKeyChanged"]);
 import { IconBolt, IconClose, IconMonitor, IconPencil, IconSearch, IconWarn } from "./Icons";
+import { Logo } from "./Logo";
 
 export function ConnectView() {
   const t = useT();
@@ -88,7 +89,7 @@ export function ConnectView() {
         <section className="nt-card">
           <div className="nt-head">
             <div className="hero-icon">
-              <IconMonitor size={26} />
+              <Logo size={30} />
             </div>
             <h1>{t("connect.title")}</h1>
           </div>

@@ -1150,15 +1150,17 @@ kbd {
   text-align: center;
 }
 .hero-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 18px;
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
   display: grid;
   place-items: center;
-  background: var(--brand);
+  /* 左上受光，右下深一点：墨色底也有体积感 */
+  background: radial-gradient(130% 130% at 28% 14%, var(--pl-accent-2), var(--pl-accent) 66%);
   box-shadow:
-    0 14px 36px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+    0 16px 40px -12px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 .nt-head h1 {
   margin-top: 4px;

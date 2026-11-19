@@ -1109,10 +1109,10 @@ kbd {
 
 /* ───────── 设置对话框（SettingsDialog.tsx）───────── */
 .modal.settings {
+  display: flex;
   width: min(720px, calc(100% - 40px));
   height: min(520px, calc(100% - 80px));
   padding: 0;
-  flex-direction: row;
   overflow: hidden;
 }
 .set-nav {

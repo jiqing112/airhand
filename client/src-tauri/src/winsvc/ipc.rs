@@ -46,7 +46,7 @@ use crate::status::{HostStatus, ServiceStatus, StatusHub};
 const PIPE_SDDL: &str = "D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;OW)(A;;0x12019b;;;IU)";
 
 /// 本进程所在的会话
-fn my_session() -> u32 {
+pub(super) fn my_session() -> u32 {
     let mut s = 0;
     unsafe {
         let _ = ProcessIdToSessionId(GetCurrentProcessId(), &mut s);
@@ -103,6 +103,10 @@ pub enum ToAgent {
     SaveControllerKey {
         key: String,
     },
+    /// 托盘菜单、控制台里选的界面语言：写进 config.toml，被控端自己也换成它（它写进配置文件的说明按这个语言写）
+    SetLanguage {
+        lang: crate::i18n::Lang,
+    },
 }
 
 async fn send_line<W: AsyncWrite + Unpin>(w: &mut W, msg: &impl Serialize) -> Result<()> {
@@ -143,7 +147,7 @@ fn attrs() -> Result<&'static Attrs> {
     }))
 }
 
-fn create(name: &str, first: bool) -> Result<NamedPipeServer> {
+pub(super) fn create(name: &str, first: bool) -> Result<NamedPipeServer> {
     let attrs = attrs()?;
     let server = unsafe {
         ServerOptions::new()
@@ -273,6 +277,15 @@ async fn handle(msg: ToAgent, agent: &Agent) {
                 Err(e) => warn!("can't save the console identity: {e}"),
             }
         }
+        ToAgent::SetLanguage { lang } => {
+            crate::i18n::set(lang);
+            let r = tokio::task::spawn_blocking(move || crate::config::save_language(lang)).await;
+            match r {
+                Ok(Ok(())) => info!(?lang, "UI language saved"),
+                Ok(Err(e)) => warn!("can't save the UI language: {e:#}"),
+                Err(e) => warn!("can't save the UI language: {e}"),
+            }
+        }
         ToAgent::SetAutostart { on } => {
             let r = tokio::task::spawn_blocking(move || {
                 super::apply_autostart(on)?;
@@ -357,10 +370,12 @@ async fn run(
 ) {
     let name = pipe_name(my_session());
     let mut seen_running = false;
+    // 断开期间选的界面语言：连上之后先发它，不然就没记进配置文件
+    let mut lang = None;
     loop {
         match open(&name) {
             Ok(pipe) => {
-                if let Err(e) = talk(pipe, &hub, &mut rx, &mut seen_running).await {
+                if let Err(e) = talk(pipe, &hub, &mut rx, &mut seen_running, lang.take()).await {
                     debug!("lost the connection to the host: {e:#}");
                 }
                 hub.send_modify(|s| {
@@ -376,8 +391,12 @@ async fn run(
             }
             Err(_) => {}
         }
-        // 断开期间的命令作废
-        while rx.try_recv().is_ok() {}
+        // 断开期间的命令作废，选的界面语言除外（只留最后一次）
+        while let Ok(msg) = rx.try_recv() {
+            if matches!(msg, ToAgent::SetLanguage { .. }) {
+                lang = Some(msg);
+            }
+        }
         let (state, console) = tokio::task::spawn_blocking(|| {
             (super::state(), unsafe { WTSGetActiveConsoleSessionId() })
         })
@@ -434,7 +453,7 @@ fn open(name: &str) -> std::io::Result<NamedPipeClient> {
     open_pipe(name, true)
 }
 
-fn open_pipe(name: &str, check_owner: bool) -> std::io::Result<NamedPipeClient> {
+pub(super) fn open_pipe(name: &str, check_owner: bool) -> std::io::Result<NamedPipeClient> {
     let handle = unsafe {
         CreateFileW(
             &HSTRING::from(name),
@@ -462,9 +481,13 @@ async fn talk(
     hub: &StatusHub,
     rx: &mut mpsc::UnboundedReceiver<ToAgent>,
     seen_running: &mut bool,
+    first: Option<ToAgent>,
 ) -> Result<()> {
     let (r, mut w) = tokio::io::split(pipe);
     let mut lines = BufReader::new(r).lines();
+    if let Some(msg) = first {
+        send_line(&mut w, &msg).await?;
+    }
     loop {
         tokio::select! {
             line = lines.next_line() => {

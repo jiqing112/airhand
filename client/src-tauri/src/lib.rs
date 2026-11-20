@@ -8,12 +8,13 @@
 //! * 配置和数据只有一个 `config.toml`（见 [`config`]）：服务器设置、本机的控制码、控制台的"我的设备"
 //!   （见 [`devices`]）。Windows 在安装目录，macOS 在 `~/Library/Application Support/app.airhand.client/`，
 //!   Linux 在 `~/.config/airhand/`；被删掉了会自动重新生成。其余运行时产生的文件退出时删除（见 [`ephemeral`]）；
-//! * 界面支持中文 / 英文，默认跟随系统语言（见 [`i18n`]）。
+//! * 界面支持中文 / 英文，默认跟随系统语言，选过的记在 `config.toml` 里（见 [`i18n`]）。
 
 // 最先声明：其它模块都要用到 `tr!`
 #[macro_use]
 mod i18n;
 mod clipboard;
+mod clipfiles;
 mod config;
 mod console;
 mod devices;
@@ -24,6 +25,7 @@ mod fullscreen;
 pub mod host;
 #[cfg(target_os = "macos")]
 mod login_item;
+mod popout;
 mod single_instance;
 pub mod status;
 mod sysinfo;
@@ -57,6 +59,7 @@ static EXITING: AtomicBool = AtomicBool::new(false);
 pub struct AppState {
     hub: StatusHub,
     services: Mutex<Services>,
+    console_opening: AtomicBool,
     webview_dirs: Mutex<Vec<PathBuf>>,
     /// Windows 安装版：被控端在系统服务里运行（托盘只负责显示和操作），切换模式不影响它
     service_mode: bool,
@@ -81,10 +84,11 @@ enum Hosting {
 }
 
 /// 托盘菜单里对配对的操作
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum PairingCmd {
     /// 换一个配对码（暂停了的配对随之恢复）
     NewCode,
+    SetCode(String),
     /// 忘掉所有配对过的控制端
     Forget,
 }
@@ -108,12 +112,14 @@ impl Hosting {
                 // 要写配置文件，不在主线程上做
                 std::thread::spawn(move || match cmd {
                     PairingCmd::NewCode => gate.new_pairing_code(),
+                    PairingCmd::SetCode(code) => gate.set_pairing_code(code),
                     PairingCmd::Forget => gate.forget_paired(),
                 });
             }
             #[cfg(windows)]
             Hosting::Service(link) => link.send(match cmd {
                 PairingCmd::NewCode => winsvc::ipc::ToAgent::NewPairingCode,
+                PairingCmd::SetCode(code) => winsvc::ipc::ToAgent::SetPairingCode { code },
                 PairingCmd::Forget => winsvc::ipc::ToAgent::ForgetPaired,
             }),
         }
@@ -216,11 +222,22 @@ fn open_console(app: &AppHandle) {
         let _ = w.set_focus();
         return;
     }
+    // 双击后的松键也会请求打开控制台；前一次还在异步建窗时不再创建。
+    if app
+        .state::<AppState>()
+        .console_opening
+        .swap(true, Ordering::AcqRel)
+    {
+        return;
+    }
     let app = app.clone();
     // Windows 上在主线程同步创建 WebView2 可能死锁，放到异步任务中创建
     tauri::async_runtime::spawn(async move {
+        let handle = app.clone();
         let builder =
-            WebviewWindowBuilder::new(&app, CONSOLE, WebviewUrl::App("index.html".into()));
+            WebviewWindowBuilder::new(&app, CONSOLE, WebviewUrl::App("index.html".into()))
+                // 把对方的一个显示器放到单独的窗口里（见 popout）
+                .on_new_window(move |url, features| popout::on_new_window(&handle, url, features));
         // WebView2 / WebKitGTK 需要一个数据目录（放在临时目录里，用完删除，见 ephemeral）；
         // macOS 的 WKWebView 没有这个概念，隐私模式下不保存网页数据（WebKit 自己在系统临时目录里建的目录见 ephemeral）
         #[cfg(not(target_os = "macos"))]
@@ -263,6 +280,9 @@ fn open_console(app: &AppHandle) {
             }
             Err(e) => warn!("can't open the console: {e}"),
         }
+        app.state::<AppState>()
+            .console_opening
+            .store(false, Ordering::Release);
     });
 }
 
@@ -270,13 +290,35 @@ fn console_title() -> String {
     tr!("Airhand 控制台", "Airhand Console")
 }
 
-/// 切换界面语言（托盘菜单或控制台）。
+/// 切换界面语言（托盘菜单或控制台），记进配置文件：选过一次之后不再跟随系统语言。
 fn set_lang(app: &AppHandle, lang: Lang) {
+    let state = app.state::<AppState>();
     if i18n::set(lang) {
         info!(?lang, "switching UI language");
     }
+    // 选的和现在的一样也记下：可能只是碰巧和系统语言一样，用户选的是它
+    save_language(&state, lang);
     // 总是通知状态循环刷新托盘菜单：勾选项被点击时系统会自动翻转勾选状态，需要重建菜单恢复
-    app.state::<AppState>().hub.send_modify(|_| {});
+    state.hub.send_modify(|_| {});
+}
+
+/// 把选的界面语言记进 config.toml。Windows 安装版：配置文件由服务里的被控端维护，经命名管道交给它写
+/// （它也换成这个语言：它写进配置文件的说明按这个语言写）
+fn save_language(state: &AppState, lang: Lang) {
+    #[cfg(windows)]
+    if state.service_mode {
+        if let Some(Hosting::Service(link)) = &state.services.lock().unwrap().host {
+            link.send(winsvc::ipc::ToAgent::SetLanguage { lang });
+        }
+        return;
+    }
+    #[cfg(not(windows))]
+    let _ = state;
+    std::thread::spawn(move || {
+        if let Err(e) = config::save_language(lang) {
+            warn!("can't save the UI language: {e:#}");
+        }
+    });
 }
 
 fn on_console_destroyed(app: &AppHandle) {
@@ -285,6 +327,8 @@ fn on_console_destroyed(app: &AppHandle) {
     if !EXITING.load(Ordering::Acquire) {
         switch_services(app, Mode::Host);
     }
+    // 弹出窗口里的画面是控制台画的，控制台没了它们也就没用了
+    popout::close_all(app);
     #[cfg(target_os = "macos")]
     {
         // 全屏中被关掉时菜单栏和程序坞还藏着
@@ -365,6 +409,13 @@ pub(crate) fn on_menu(app: &AppHandle, id: &str) {
             // 勾选项被点击时系统会自动翻转勾选状态：先按原来的状态重建菜单，切换完了再刷新
             app.state::<AppState>().hub.send_modify(|_| {});
         }
+        #[cfg(target_os = "macos")]
+        "receive_files" => {
+            let handle = app.clone();
+            let _ = app.run_on_main_thread(move || clipfiles::macos::choose(&handle));
+        }
+        #[cfg(target_os = "macos")]
+        "cancel_receive" => clipfiles::macos::cancel(),
         #[cfg(target_os = "macos")]
         "uninstall" => {
             // 对话框是模态的：等这次菜单事件处理完，再在主线程上弹出来
@@ -620,14 +671,10 @@ async fn regenerate_lan_password(state: tauri::State<'_, AppState>) -> Result<St
         }
         return Ok(code);
     }
-    #[cfg(windows)]
-    let _ = &state;
-    let c = code.clone();
-    tauri::async_runtime::spawn_blocking(move || config::save_pairing(&c, false))
-        .await
-        .map_err(Problem::failed)?
-        .map_err(Problem::failed)?;
-    state.hub.send_modify(|s| s.host.pairing = Some(code.clone()));
+    // 本进程模式：被控端和门就在本进程里，走 PairingCmd（和托盘菜单同一条路）
+    state.services.lock().unwrap().host.as_ref().map(|h| {
+        h.pairing(PairingCmd::SetCode(code.clone()));
+    });
     Ok(code)
 }
 
@@ -693,6 +740,43 @@ fn window_fullscreen(window: tauri::WebviewWindow) -> Result<bool, Problem> {
     fullscreen::is_on(&window).map_err(Problem::failed)
 }
 
+/// 弹出窗口进入 / 退出全屏（控制台调用，按 label 找窗口，见 [`popout`]）
+#[tauri::command]
+fn popout_set_fullscreen(app: AppHandle, label: String, on: bool) -> Result<(), Problem> {
+    match popout::window(&app, &label) {
+        Some(w) => w.set_fullscreen(on).map_err(Problem::failed),
+        None => Ok(()),
+    }
+}
+
+/// 弹出窗口是不是全屏（已经关掉了的算不是）
+#[tauri::command]
+fn popout_fullscreen(app: AppHandle, label: String) -> Result<bool, Problem> {
+    match popout::window(&app, &label) {
+        Some(w) => w.is_fullscreen().map_err(Problem::failed),
+        None => Ok(false),
+    }
+}
+
+/// 把弹出窗口拿到前面（最小化了的先还原）
+#[tauri::command]
+fn popout_focus(app: AppHandle, label: String) -> Result<(), Problem> {
+    if let Some(w) = popout::window(&app, &label) {
+        let _ = w.unminimize();
+        w.set_focus().map_err(Problem::failed)?;
+    }
+    Ok(())
+}
+
+/// 关掉弹出窗口
+#[tauri::command]
+fn popout_close(app: AppHandle, label: String) -> Result<(), Problem> {
+    match popout::window(&app, &label) {
+        Some(w) => w.destroy().map_err(Problem::failed),
+        None => Ok(()),
+    }
+}
+
 #[tauri::command]
 async fn switch_to_host(app: AppHandle) -> Result<(), Problem> {
     let a = app.clone();
@@ -735,14 +819,21 @@ pub fn run() {
     enable_dpi_awareness();
     // 先清理上次残留的目录，再创建本次的（同一个前缀）
     ephemeral::sweep_stale();
+    #[cfg(target_os = "macos")]
+    if let Err(e) = host::mic::cleanup_stale() {
+        warn!("removing a stale virtual microphone: {e}");
+    }
     #[cfg(target_os = "linux")]
     ephemeral::isolate_caches();
 
     let hub = status::new_hub();
+    #[cfg(target_os = "macos")]
+    clipfiles::macos::init(&hub);
     let app = tauri::Builder::default()
         .manage(AppState {
             hub: hub.clone(),
             services: Mutex::default(),
+            console_opening: AtomicBool::new(false),
             webview_dirs: Mutex::default(),
             service_mode,
             console: Default::default(),
@@ -764,6 +855,10 @@ pub fn run() {
             clipboard_text,
             set_fullscreen,
             window_fullscreen,
+            popout_set_fullscreen,
+            popout_fullscreen,
+            popout_focus,
+            popout_close,
             switch_to_host,
             devices_load,
             devices_save,
@@ -865,12 +960,21 @@ pub fn run() {
                 sv.host = None;
                 sv.controller = None;
             }
+            popout::close_all(app);
             if let Some(w) = app.get_webview_window(CONSOLE) {
                 let _ = w.destroy();
             }
             let dirs: Vec<PathBuf> = std::mem::take(&mut *state.webview_dirs.lock().unwrap());
             for d in dirs {
                 ephemeral::remove_with_retry(&d, Duration::from_secs(3));
+            }
+            #[cfg(target_os = "macos")]
+            if let Err(e) = clipfiles::macos::shutdown() {
+                warn!("cleaning up received files: {e}");
+            }
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
+            if let Err(e) = host::mic::shutdown() {
+                warn!("stopping the virtual microphone: {e}");
             }
             // Linux：托盘图标、GStreamer 缓存所在的目录（内存盘 XDG_RUNTIME_DIR 里），退出时删掉
             #[cfg(target_os = "linux")]
@@ -896,6 +1000,9 @@ fn start_service_link(app: &AppHandle, hub: &StatusHub) -> Hosting {
             warn!("can't start the Airhand service: {e:#}");
         }
     });
+    // 剪贴板里的文件：替服务里的被控端（SYSTEM）放进剪贴板、以登录的用户的身份读文件（见 winsvc::clip）
+    // 任务一直跑到进程退出（不等它）
+    drop(winsvc::clip::start_tray());
     let app = app.clone();
     Hosting::Service(winsvc::ipc::AgentLink::start(hub.clone(), move || {
         app.exit(0)

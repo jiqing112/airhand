@@ -1,6 +1,6 @@
 // "我的设备"的列表操作（纯函数）。保存在 config.toml 的 [[device]] 里（见 Rust 端 devices.rs），
 // 每次变化都把整个列表交给 api.saveDevices（见 actions.ts）。
-import type { QualitySettings, ResumeToken, SavedDevice } from "./api";
+import type { MouseMode, QualitySettings, ResumeToken, SavedDevice } from "./api";
 
 /** 最多保存多少台（与 Rust 端 devices::MAX 相同） */
 export const MAX_DEVICES = 50;
@@ -18,7 +18,7 @@ export const deviceKey = (d: Pick<SavedDevice, "code" | "addr">) => d.code || d.
 /** 最近连过的在前面 */
 export const sortDevices = (list: SavedDevice[]) => [...list].sort((a, b) => b.lastUsed - a.lastUsed);
 
-/** 连上了：记下（或更新）这台电脑。自己起的名字保留，对方的名字、系统、凭证、画质用这次的 */
+/** 连上了：记下（或更新）这台电脑。自己起的名字保留，对方的名字、系统、凭证、画质、鼠标模式用这次的 */
 export function remember(
   list: SavedDevice[],
   seen: {
@@ -30,6 +30,8 @@ export function remember(
     resume: ResumeToken | null;
     quality: QualitySettings | null;
     hostKey?: string | null;
+    mouse?: MouseMode | null;
+    swapCtrlCommand?: boolean;
   },
   now: number,
 ): SavedDevice[] {
@@ -44,14 +46,20 @@ export function remember(
     resume: seen.resume ?? old?.resume ?? null,
     lastUsed: now,
     quality: seen.quality ?? old?.quality ?? null,
+    mouse: seen.mouse ?? old?.mouse ?? null,
+    swapCtrlCommand: seen.swapCtrlCommand ?? old?.swapCtrlCommand ?? false,
     // 对方的公钥：连上时确认过的（第一次连上、或者用户信任了新的身份）代替旧的
     hostKey: seen.hostKey ?? old?.hostKey ?? null,
   };
   return sortDevices([d, ...list.filter((x) => deviceKey(x) !== key)]).slice(0, MAX_DEVICES);
 }
 
-/** 改一台的名字或画质（列表里没有就什么也不变） */
-export function patchDevice(list: SavedDevice[], key: string, patch: Partial<Pick<SavedDevice, "alias" | "quality">>) {
+/** 更新设备名或会话偏好（列表里没有就什么也不变）。键：控制码，或者局域网直连的地址 */
+export function patchDevice(
+  list: SavedDevice[],
+  key: string,
+  patch: Partial<Pick<SavedDevice, "alias" | "quality" | "mouse" | "swapCtrlCommand">>,
+) {
   if (!list.some((d) => deviceKey(d) === key)) return list;
   return list.map((d) => (deviceKey(d) === key ? { ...d, ...patch } : d));
 }

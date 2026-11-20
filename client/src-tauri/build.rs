@@ -6,6 +6,45 @@ fn main() {
         println!("cargo:rustc-link-arg=/DELAYLOAD:mfplat.dll");
         println!("cargo:rustc-link-lib=delayimp");
     }
+
+    let mic = "src/host/mic";
+    match std::env::var("CARGO_CFG_TARGET_OS").as_deref() {
+        Ok("macos") => {
+            println!("cargo:rerun-if-changed={mic}/pcm.h");
+            println!("cargo:rerun-if-changed={mic}/tap.m");
+            cc::Build::new()
+                .std("gnu11")
+                .flag("-fobjc-arc")
+                .flag("-fblocks")
+                .file(format!("{mic}/tap.m"))
+                .compile("airhand_mic");
+            for framework in ["AVFAudio", "CoreAudio", "Foundation"] {
+                println!("cargo:rustc-link-lib=framework={framework}");
+            }
+        }
+        Ok("linux") => {
+            println!("cargo:rerun-if-changed={mic}/pcm.h");
+            println!("cargo:rerun-if-changed={mic}/pipewire.c");
+            let pw = pkg_config::Config::new()
+                .cargo_metadata(false)
+                .atleast_version("0.3.49")
+                .probe("libpipewire-0.3")
+                .expect("install libpipewire-0.3-dev to build the virtual microphone");
+            cc::Build::new()
+                .std("gnu11")
+                .includes(pw.include_paths)
+                .file(format!("{mic}/pipewire.c"))
+                .compile("airhand_mic");
+            // The archive that references PipeWire must precede it in the ELF linker's input.
+            for path in pw.link_paths {
+                println!("cargo:rustc-link-search=native={}", path.display());
+            }
+            for lib in pw.libs {
+                println!("cargo:rustc-link-lib={lib}");
+            }
+        }
+        _ => {}
+    }
     tauri_build::build();
 
     // 测试（cargo test --lib 的单元测试、tests/ 里的测试）和示例（cargo run --example）的可执行文件
@@ -27,4 +66,5 @@ fn main() {
         println!("cargo:rerun-if-changed=windows/tests.rc");
         println!("cargo:rerun-if-changed=windows/tests.manifest.xml");
     }
+
 }

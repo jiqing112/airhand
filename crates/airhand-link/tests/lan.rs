@@ -15,7 +15,7 @@ use airhand_link::controller::{
 };
 use airhand_link::host::{self, HostCmd, HostEvents, LanConfig};
 use airhand_link::net::Trust;
-use airhand_link::secure::{Access, Gate, Identity, PairingAttempt};
+use airhand_link::secure::{Gate, Identity, PairingAttempt};
 use airhand_link::{LinkConfig, Problem, ServerState};
 use airhand_proto::handshake::PublicKey;
 use airhand_proto::signal::Reclaim;
@@ -72,9 +72,6 @@ impl TestGate {
 impl Gate for TestGate {
     fn identity(&self) -> Identity {
         self.me.clone()
-    }
-    fn access(&self) -> Access {
-        Access::Pairing
     }
     fn begin_pairing(&self) -> Option<Box<dyn PairingAttempt + '_>> {
         Some(Box::new(Attempt {

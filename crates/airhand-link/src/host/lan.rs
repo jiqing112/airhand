@@ -33,7 +33,6 @@ use crate::wire::read_msg;
 
 use super::HostEvents;
 use super::Incoming;
-use super::session::ApprovalSlots;
 
 /// 会话闭包（[`super::run`] 装好的）：中转连上的控制端和局域网直连的都用它
 type SessionFn = Arc<dyn Fn(Incoming) -> Pin<Box<dyn Future<Output = ()> + Send>> + Send + Sync>;
@@ -124,11 +123,10 @@ pub fn listen<E: HostEvents>(
     config: LanConfig,
     events: Arc<E>,
     session: SessionFn,
-    approvals: ApprovalSlots,
     kick: watch::Sender<ByeReason>,
 ) -> OwnedTask<()> {
     OwnedTask(tokio::spawn(async move {
-        if let Err(e) = serve(config, events, session, approvals, kick).await {
+        if let Err(e) = serve(config, events, session, kick).await {
             warn!("the lan listener stopped: {e:#}");
         }
     }))
@@ -138,7 +136,6 @@ async fn serve<E: HostEvents>(
     config: LanConfig,
     events: Arc<E>,
     session: SessionFn,
-    approvals: ApprovalSlots,
     kick: watch::Sender<ByeReason>,
 ) -> Result<()> {
     let cert = Cert::generate().context("can't generate the lan certificate")?;
@@ -168,11 +165,10 @@ async fn serve<E: HostEvents>(
                     continue;
                 }
                 let events = events.clone();
-                let approvals = approvals.clone();
                 let kick = kick.clone();
                 let session = session.clone();
                 sessions.spawn(async move {
-                    match accept(incoming, &session, approvals, kick).await {
+                    match accept(incoming, &session, kick).await {
                         Ok((session_id, run, keep)) => {
                             let _keep = keep;
                             run.await;
@@ -197,7 +193,6 @@ type Keep = (Arc<Router>, OwnedTask<()>);
 async fn accept(
     incoming: quinn::Incoming,
     session: &SessionFn,
-    approvals: ApprovalSlots,
     kick: watch::Sender<ByeReason>,
 ) -> Result<(u64, Pin<Box<dyn Future<Output = ()> + Send>>, Keep)> {
     let conn = tokio::time::timeout(BOOTSTRAP_TIMEOUT, incoming.accept()?)
@@ -216,7 +211,7 @@ async fn accept(
         .context("timed out reading the lane header")??;
     let header = SessionHeader::decode(&head).context("not a session lane")?;
     anyhow::ensure!(
-        header.lane == SessionLane::Control as u8,
+        header.lane == SessionLane::Control,
         "the first lane isn't the control lane"
     );
     let mut buf = Vec::new();
@@ -241,8 +236,8 @@ async fn accept(
             ip: from.ip(),
         },
         kick: kick.subscribe(),
-        approvals,
         direct: None,
+        file_limit: None,
     });
     Ok((lan.session_id, run, (router, router_task)))
 }

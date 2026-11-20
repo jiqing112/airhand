@@ -41,36 +41,37 @@ Grab the latest build from [Releases](https://github.com/jiqing112/airhand/relea
 The relay address baked into these installers is the code default (`127.0.0.1:4433`, empty fingerprint = trust on first use). After installing, point it at your own server in [`config.toml`](docs/usage.md#配置文件); to build an installer that connects out of the box, set the repository Variables (`AIRHAND_SERVER` / `AIRHAND_SERVER_FP`) and push a new tag.
 
 > [!NOTE]
-> Since protocol v9 the client↔server and host↔controller sides each have a version range: new features negotiate with capability bits and unknown messages are skipped, so versions can mix; versions before v9 are incompatible and are detected with a clear message (see [Protocol versions](docs/development.md#协议版本)).
+> **Work in progress (0.3.1).** Build the relay, clients and web service from the same v10 revision; earlier builds cannot be mixed. Video uses one QUIC stream per frame. [Protocol versions](docs/development.md#protocol-versions)
 
 ## Performance
 
 Every step from capture to display is designed for low latency:
 
-- **Hardware encoding/decoding**: the host hardware-encodes on the GPU (NVENC / Quick Sync / AMF, VideoToolbox, MediaCodec) in low-latency mode with no B-frames; the controller hardware-decodes (WebCodecs / MediaCodec). Measured on an RTX card: hardware AV1 encodes a 1080p frame in about 7 ms (output of a 4K screen)
-- **Best format**: automatically picks the highest-compression format both ends support, in AV1 > HEVC > H.264 order; scaling and color conversion use SIMD, buffers are fully reused
-- **Latency never piles up**: the host caps bytes in flight (≈ bitrate × (RTT + 50 ms)) and skips to the newest frame when the network slows down; bitrate is adjusted on every acknowledgement from measured queuing delay and bandwidth — it drops within a few hundred milliseconds and climbs back gradually
-- **Direct path**: the two ends punch a direct connection besides the relay (same LAN, or non-symmetric NAT), so video and audio stop detouring through the server; the lower-latency path wins, and a broken direct path falls back to the relay without dropping the session
-- **QUIC + BBR**: BBR congestion control is steadier than Cubic on lossy Wi-Fi and cross-border links; control messages, audio and video queue separately, so mouse and pings never wait behind big frames; the relay only forwards bytes and never parses frames
-- **Decode and show**: the decoder runs in low-latency mode and draws straight onto a desynchronized Canvas, skipping the compositor queue and vsync
-- **Local pointer**: the remote cursor shape is synced locally; movement happens locally
-- **Bandwidth-friendly**: no frame is sent while the screen doesn't change — an idle desktop costs almost nothing; sessions on hidden tabs drop to 5 fps
+- **Hardware encoding and decoding**: the host encodes on the GPU (NVENC / Quick Sync / AMF, VideoToolbox, MediaCodec) in low-latency mode without B-frames; the controller decodes on the GPU (WebCodecs / MediaCodec). Measured with a 4K screen streamed at 1080p, hardware AV1 encoding takes about 7 ms per frame (RTX graphics card)
+- **The best format**: AV1 > HEVC > H.264, automatically picking the most efficient format both sides support; scaling and color conversion use SIMD, and all buffers are reused
+- **No lag build-up**: the host limits the bytes in flight (≈ bitrate × (RTT + 50 ms)) and skips to the latest frame on a slow network; the bitrate follows the measured queueing delay and bandwidth on every acknowledgement, backing off within a few hundred milliseconds and recovering gradually
+- **Direct path**: besides the relay, the two ends punch a direct path through their NATs (on the same LAN, or whenever the NAT isn't symmetric), so video and audio stop detouring through the server; the lower-latency path is picked automatically, and if the direct path breaks the session falls back to the relay without dropping
+- **QUIC + BBR**: BBR congestion control is steadier than Cubic on lossy networks such as Wi-Fi or long-distance links; control messages, audio and video are queued separately, so mouse input and pings never wait behind a large frame; the relay only forwards bytes and never parses the video
+- **Loss doesn't stall the picture**: each frame travels on its own QUIC stream, so a lost packet only holds up that frame. A frame that keeps not arriving is abandoned (no more retransmitting stale data) and the encoder continues from a long-term reference frame the controller already has (reference invalidation) instead of sending a large keyframe (Windows H.264, NVIDIA AV1; other encoders send a keyframe)
+- **Decode and show**: the decoder runs in low-latency mode, and each frame is drawn to a desynchronized canvas as soon as it's decoded, without waiting for vsync
+- **Local pointer**: the remote cursor's shape is mirrored locally, and moving it happens locally
+- **Low bandwidth**: no frames are sent while the screen is still, so an idle desktop uses almost nothing; sessions that aren't on screen drop to 5 fps
 
 See [How it works → Video](docs/architecture.md#画面).
 
 ## Features
 
 - **LAN direct connections**: no relay server needed — connect to `IP:port` on the same network (new in this fork, see [LAN direct connections](docs/usage.md#局域网直连))
-- **Windows system service**: lock screen, sign-in screen and UAC prompts are all visible and operable; the machine is controllable right after boot, before anyone signs in
-- **Fixed control code**: survives restarts and upgrades, even a server reboot, until you change it
-- **Console**: browser-style tabs, control several machines at once, an overview grid shows every screen; devices you connected to are saved and reconnect with a click; when the peer is offline it reconnects automatically once it comes back
-- **Web console**: the controller side can also be deployed with Docker — open a browser and go, nothing to install on the machine you operate
-- **Android**: control a PC or another phone with touchpad or touch gestures, share your own screen for assistance (with your consent by default); watch the screen on a TV with a remote
-- **Audio**: the host's system audio is synced to the controller (Opus + adaptive jitter buffer), with lip-sync for videos; conversely the controller's microphone shows up on the Windows host as a virtual microphone (Steam Streaming Microphone), so you can join meetings or dictate on the remote machine
-- **Utilities**: two-way clipboard sync, typing the clipboard as keystrokes, system shortcuts (Win, Alt+Tab, Ctrl+Shift+Esc…), multiple monitors, keyboard lockdown in fullscreen, quality presets
-- **Secure by default**: sessions are end-to-end encrypted — the relay never sees the screen or keystrokes; the first connection asks for the pairing code shown in the host's tray (never through the server), after which the host remembers the controller; TLS 1.3 + certificate pinning, control codes are protected against brute force; the host shows who is connected and can disconnect them at any time
-- **Leaves no trace**: the host is a single tray icon with no WebView; everything it saves lives in one `config.toml`, runtime files are deleted on exit; after [uninstalling](docs/usage.md#卸载) nothing remains (Windows has an uninstaller, macOS uninstall from the menu, Linux is two commands)
-- **Bilingual**: follows the system language (English / 简体中文); messages from the remote computer and the server are shown in **your** language too
+- **Windows system service**: the lock screen, the sign-in screen and UAC prompts can be seen and controlled, and the computer can be reached after boot, before anyone signs in
+- **Fixed control codes**: they survive restarts, upgrades and even server restarts until you change them yourself
+- **Console**: browser-style tabs to control several computers at once, plus a multi-screen overview to watch them all. Computers you've connected to are saved and reconnect with one click; if one is offline, it connects as soon as it comes back
+- **Web console**: the controller can also run in Docker and be used from a browser, with nothing to install on the computer you control from
+- **Android**: control computers and phones from a phone as a trackpad or touchscreen, or share your own screen to get help (a device needs the pairing code shown on the phone the first time, and you're notified whenever one connects); watch on a TV with the remote
+- **Audio**: the host's system audio plays on the controller (Opus + adaptive jitter buffer), with optional A/V sync for watching videos. The other way, the controller can send its microphone to meeting apps and voice typing on Windows, macOS 14.2+ and Linux (PipeWire) hosts. Mac and Linux hosts publish **Airhand Microphone** while forwarding is on
+- **Handy tools**: two-way clipboard sync (text, plus files and folders, sent when you paste), typing the clipboard as keystrokes, system shortcuts (Win, Alt+Tab, Ctrl+Shift+Esc…), multiple monitors (switch between them, show and control several at once, or give each its own window to put on your own screens in full screen), keyboard lock in fullscreen, quality presets
+- **Secure by default**: sessions are end-to-end encrypted, so the relay server can't see the screen or keystrokes; the first connection needs the pairing code from the other computer's tray (it never goes through the server), and its identity is recognized afterwards; TLS 1.3 with certificate pinning, brute-force protection for control codes; the host always sees who is connected and can disconnect them with one click
+- **Leaves nothing behind**: the host is just a tray icon and doesn't start a WebView; everything worth keeping is in one `config.toml`, other runtime files are deleted on exit, and nothing is left after [uninstalling](docs/usage.md#uninstalling) (Windows has an uninstaller, macOS has "Uninstall Airhand…" in the menu, Linux takes two commands)
+- **English and Chinese**: follows the system language; notices from the other computer and the server also appear in **your** language
 
 ## Supported platforms
 

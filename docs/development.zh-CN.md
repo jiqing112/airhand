@@ -32,6 +32,8 @@ cargo test
 ./gradlew testDebugUnitTest -Pairhand.abis=x86_64
 ```
 
+> 上面这些在 2026-11-20 完整实测过（服务端、桌面客户端、网页控制台、客户端互连建立会话，全链路通过），结论和遗留问题见[验证记录](verification.zh-CN.md)。Windows 上只有 GNU 工具链时的构建 / 测试环境见[构建文档](building.zh-CN.md#windows-上用-gnu-工具链开发--测试)。
+
 测试 Android 被控端不需要第二台手机：`android/native` 里有一个协议级的控制端，在电脑上连上手机的控制码，统计画面 / 声音，还可以点一下、打字：
 
 ```bash

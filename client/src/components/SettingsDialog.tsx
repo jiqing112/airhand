@@ -7,6 +7,7 @@
 // * 关于：版本、本机名、配置文件路径（设置和我的设备都在里面）。
 import { useEffect, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
+import { errorText } from "../lib/messages";
 import { setLang, useLang, useT, type Lang } from "../lib/i18n";
 import { store, useStore, type SettingsSection } from "../lib/store";
 import { IconCheck, IconCopy } from "./Icons";
@@ -114,7 +115,7 @@ function ServerSection() {
     void api
       .saveServer(server.trim(), fp.trim())
       .then(() => setSaved({ s: server.trim(), f: fp.trim() }))
-      .catch((e) => setError(String(e?.message ?? e)))
+      .catch((e) => setError(errorText(e)))
       .finally(() => setSaving(false));
   };
 
@@ -214,7 +215,7 @@ function LanSection() {
         setSaved({ listen, port: portNum });
         setPassword("");
       })
-      .catch((e) => setError(String(e?.message ?? e)))
+      .catch((e) => setError(errorText(e)))
       .finally(() => setSaving(false));
   };
 

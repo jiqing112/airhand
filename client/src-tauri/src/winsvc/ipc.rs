@@ -311,6 +311,8 @@ async fn handle(msg: ToAgent, agent: &Agent) {
             }
         }
         ToAgent::SaveLan { listen, port, password } => {
+            let gate = agent.gate.clone();
+            let hot = password.clone();
             let r = tokio::task::spawn_blocking(move || {
                 crate::config::save_lan(listen, port, password.as_deref())
             })
@@ -319,6 +321,10 @@ async fn handle(msg: ToAgent, agent: &Agent) {
                 Ok(Ok(())) => debug!(listen, port, "saved the lan settings"),
                 Ok(Err(e)) => warn!("can't save the lan settings: {e:#}"),
                 Err(e) => warn!("can't save the lan settings: {e}"),
+            }
+            // 连接密码就是配对码：让运行中的被控端的门马上用新码（不用重启）
+            if let Some(code) = hot {
+                let _ = tokio::task::spawn_blocking(move || gate.set_pairing_code(code)).await;
             }
         }
         ToAgent::SaveDevices { devices } => {
@@ -351,9 +357,9 @@ impl AgentLink {
         Self { tx, task }
     }
 
-    /// 发给被控端（没连上时丢弃）
-    pub fn send(&self, msg: ToAgent) {
-        let _ = self.tx.send(msg);
+    /// 发给被控端。返回 `false` 表示接收端已经没了（服务里的被控端不在运行），消息没有送出去
+    pub fn send(&self, msg: ToAgent) -> bool {
+        self.tx.send(msg).is_ok()
     }
 }
 

@@ -98,14 +98,17 @@ impl Hosting {
         match self {
             Hosting::InProcess(h) => h.send(cmd),
             #[cfg(windows)]
-            Hosting::Service(link) => link.send(match cmd {
-                HostCmd::KickAll => winsvc::ipc::ToAgent::KickAll,
-                HostCmd::NewCode => winsvc::ipc::ToAgent::NewCode,
-            }),
+            Hosting::Service(link) => {
+                let _ = link.send(match cmd {
+                    HostCmd::KickAll => winsvc::ipc::ToAgent::KickAll,
+                    HostCmd::NewCode => winsvc::ipc::ToAgent::NewCode,
+                });
+            }
         }
     }
 
-    fn pairing(&self, cmd: PairingCmd) {
+    /// 发给配对状态的维护者。返回 `false` 表示服务的接收端已经没了（消息没送出去）
+    fn pairing(&self, cmd: PairingCmd) -> bool {
         match self {
             Hosting::InProcess(h) => {
                 let gate = h.gate().clone();
@@ -115,6 +118,7 @@ impl Hosting {
                     PairingCmd::SetCode(code) => gate.set_pairing_code(code),
                     PairingCmd::Forget => gate.forget_paired(),
                 });
+                true
             }
             #[cfg(windows)]
             Hosting::Service(link) => link.send(match cmd {
@@ -597,17 +601,16 @@ async fn save_server(
 ) -> Result<(), Problem> {
     #[cfg(windows)]
     if state.service_mode {
-        let connected = state.hub.borrow().service.is_some_and(|s| s.connected);
         let sv = state.services.lock().unwrap();
-        return match &sv.host {
-            Some(Hosting::Service(link)) if connected => {
-                link.send(winsvc::ipc::ToAgent::SaveServer { server, fp });
-                Ok(())
-            }
-            _ => Err(Problem::failed(
-                "the Airhand service isn't reachable from this session",
-            )),
-        };
+        // 配置文件归服务里的被控端维护：IPC 通道活着就行（被控端在不在跑、控制台开没开都无所谓）
+        if let Some(Hosting::Service(link)) = &sv.host
+            && link.send(winsvc::ipc::ToAgent::SaveServer { server: server.clone(), fp: fp.clone() })
+        {
+            return Ok(());
+        }
+        return Err(Problem::failed(
+            "the Airhand service isn't reachable from this session; restart Airhand and try again",
+        ));
     }
     #[cfg(windows)]
     let _ = state;
@@ -628,17 +631,20 @@ async fn save_lan(
 ) -> Result<(), Problem> {
     #[cfg(windows)]
     if state.service_mode {
-        let connected = state.hub.borrow().service.is_some_and(|s| s.connected);
         let sv = state.services.lock().unwrap();
-        return match &sv.host {
-            Some(Hosting::Service(link)) if connected => {
-                link.send(winsvc::ipc::ToAgent::SaveLan { listen, port, password });
-                Ok(())
-            }
-            _ => Err(Problem::failed(
-                "the Airhand service isn't reachable from this session",
-            )),
-        };
+        // 同 save_server：IPC 通道活着就行（监听开关要重启生效，连接密码立即生效）
+        if let Some(Hosting::Service(link)) = &sv.host
+            && link.send(winsvc::ipc::ToAgent::SaveLan {
+                listen,
+                port,
+                password: password.clone(),
+            })
+        {
+            return Ok(());
+        }
+        return Err(Problem::failed(
+            "the Airhand service isn't reachable from this session; restart Airhand and try again",
+        ));
     }
     #[cfg(windows)]
     let _ = &state;

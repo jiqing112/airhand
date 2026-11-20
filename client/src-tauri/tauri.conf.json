@@ -21,6 +21,7 @@
     "active": true,
     "targets": ["nsis"],
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "resources": ["libstdc++-6.dll", "libgcc_s_seh-1.dll", "libwinpthread-1.dll"],
     "shortDescription": "High-performance, low-latency remote desktop over QUIC",
     "longDescription": "Airhand is a high-performance, low-latency remote desktop built on QUIC. The screen is encoded on the GPU (AV1 / HEVC / H.264) at up to 120 fps, playback skips to the latest frame when the network slows down instead of letting lag pile up, and the mouse pointer is drawn locally. One program is both the host and the controller: control several computers at once, with audio and clipboard sync.",
     "windows": {

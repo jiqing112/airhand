@@ -79,6 +79,8 @@ CI 用 MSVC 构建 Windows 版，本机只有 GNU 工具链（rustup 的 `x86_64
 - MinGW：安装 [MSYS2](https://www.msys2.org)，在它的终端里 `pacman -S mingw-w64-x86_64-gcc`（gcc 会带上 binutils 的 as / dlltool / windres 和 winpthreads），并把 `…\msys64\mingw64\bin` 加进 PATH（放在 Git 自带的 `mingw64\bin` 前面）
 - CMake 和 Ninja（编译 libopus）：`pacman -S mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja`，或者用官方安装包
 
+GNU 工具链构建的程序链接的是 MSYS2 的 C++ 运行库（`libstdc++-6.dll`，openh264 需要），安装包把它和 `libgcc_s_seh-1.dll`、`libwinpthread-1.dll` 一起分发（见 `client/src-tauri/tauri.conf.json` 的 `bundle.resources`，来源是 mingw-w64 的 gcc-libs / libwinpthread 包）——这三份 DLL 更新工具链后要同步替换，否则装到普通机器上服务安装（`airhand.exe --install`）会因找不到 DLL 失败（退出码 0xC0000135）。
+
 之后和上面一样 `npm run tauri build`、`cargo test`。常见报错对照：
 
 | 报错 | 原因 |

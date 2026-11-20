@@ -79,6 +79,8 @@ CI builds Windows with MSVC. A machine with only the GNU toolchain (rustup's `x8
 - MinGW: install [MSYS2](https://www.msys2.org), run `pacman -S mingw-w64-x86_64-gcc` in its shell (gcc brings the binutils as / dlltool / windres and winpthreads), and add `…\msys64\mingw64\bin` to PATH (ahead of Git's own `mingw64\bin`)
 - CMake and Ninja (for libopus): `pacman -S mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja`, or the official installers
 
+Executables built with the GNU toolchain link against MSYS2's C++ runtime (`libstdc++-6.dll`, needed by openh264); the installer ships it together with `libgcc_s_seh-1.dll` and `libwinpthread-1.dll` (see `bundle.resources` in `client/src-tauri/tauri.conf.json`, sourced from the mingw-w64 gcc-libs / libwinpthread packages). Replace those three DLLs whenever the toolchain is updated, otherwise the service installation (`airhand.exe --install`) fails on ordinary machines with DLL not found (exit code 0xC0000135).
+
 Then build and test as above (`npm run tauri build`, `cargo test`). Common errors:
 
 | Error | Cause |

@@ -1364,6 +1364,63 @@ kbd {
   height: 26px;
 }
 
+/* 倒三角：设备可能有几块网卡（物理 + 虚拟机的虚拟网卡），点开列出全部局域网地址，
+ * 点一行复制一个。往上弹出（信息条贴着窗口底边） */
+.nt-addrs-wrap {
+  position: relative;
+  display: flex;
+}
+.nt-addrs-wrap .icon-btn svg {
+  transition: transform var(--t-fast);
+}
+.nt-addrs-wrap .icon-btn.open svg {
+  transform: rotate(180deg);
+}
+.nt-addrs {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + var(--sp-2));
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 224px;
+  padding: var(--sp-1);
+  border-radius: var(--r-m);
+  border: 1px solid var(--edge);
+  background: var(--pop);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-soft), var(--sheen);
+}
+.nt-addrs-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: none;
+  border-radius: var(--r-s);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-s);
+  letter-spacing: 0.02em;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast);
+}
+.nt-addrs-row:hover {
+  background: var(--accent-soft);
+}
+.nt-addrs-row .mono {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nt-addrs-row.done {
+  color: var(--ok);
+}
+
 /* 目标输入：6 位控制码或者局域网地址（IP:端口），一个框两种目标。
  * 等宽数字让控制码好对位；地址长一点也不换行（往右滚） */
 .nt-target {

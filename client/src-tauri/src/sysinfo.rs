@@ -130,6 +130,113 @@ fn os_name() -> String {
     }
 }
 
+// ───────────────────────────── 局域网地址 ─────────────────────────────
+
+/// 本机所有能被别的设备连的局域网 IPv4，按网卡顺序。虚拟网卡（VMware / Hyper-V / WSL 的
+/// 网段）也在里面——虚拟机往往就是从那些网段连过来的。环回（127）、链路本地（169.254）
+/// 和未指定的地址不算。主界面信息条点倒三角列出来的就是它们。
+pub fn lan_ips() -> Vec<std::net::Ipv4Addr> {
+    #[cfg(windows)]
+    let list = lan_ips_windows();
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let list = lan_ips_getifaddrs();
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    let list = Vec::new();
+    let mut out: Vec<std::net::Ipv4Addr> = Vec::new();
+    for ip in list {
+        if !out.contains(&ip) {
+            out.push(ip);
+        }
+    }
+    out
+}
+
+fn usable_lan_ip(ip: std::net::Ipv4Addr) -> bool {
+    !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified()
+}
+
+#[cfg(windows)]
+fn lan_ips_windows() -> Vec<std::net::Ipv4Addr> {
+    use windows::Win32::NetworkManagement::IpHelper::{
+        GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
+        GetAdaptersAddresses, IP_ADAPTER_ADDRESSES_LH,
+    };
+    use windows::Win32::Networking::WinSock::{AF_INET, SOCKADDR_INET};
+
+    let flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    let mut size: u32 = 0;
+    // 第一次调用拿需要的大小；网卡会变，失败就加大缓冲再试
+    let _ = unsafe { GetAdaptersAddresses(AF_INET.0 as u32, flags, None, None, &mut size) };
+    for _ in 0..4 {
+        let mut buf = vec![0u8; size.max(16 * 1024) as usize];
+        let mut len = buf.len() as u32;
+        let err = unsafe {
+            GetAdaptersAddresses(
+                AF_INET.0 as u32,
+                flags,
+                None,
+                Some(buf.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>()),
+                &mut len,
+            )
+        };
+        if err != 0 {
+            size = (len.max(size)) * 2;
+            continue;
+        }
+        let mut out = Vec::new();
+        let mut cur = buf.as_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
+        while !cur.is_null() {
+            let adapter = unsafe { &*cur };
+            let mut unicast = adapter.FirstUnicastAddress;
+            while !unicast.is_null() {
+                let u = unsafe { &*unicast };
+                let sa: &SOCKADDR_INET =
+                    unsafe { &*(u.Address.lpSockaddr as *const SOCKADDR_INET) };
+                let (family, b) = unsafe { (sa.si_family, sa.Ipv4.sin_addr.S_un.S_un_b) };
+                if family == AF_INET {
+                    let ip = std::net::Ipv4Addr::new(b.s_b1, b.s_b2, b.s_b3, b.s_b4);
+                    if usable_lan_ip(ip) {
+                        out.push(ip);
+                    }
+                }
+                unicast = u.Next;
+            }
+            cur = adapter.Next;
+        }
+        return out;
+    }
+    Vec::new()
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn lan_ips_getifaddrs() -> Vec<std::net::Ipv4Addr> {
+    let mut out = Vec::new();
+    unsafe {
+        let mut list: *mut libc::ifaddrs = std::ptr::null_mut();
+        if libc::getifaddrs(&mut list) != 0 {
+            return out;
+        }
+        let mut cur = list;
+        while !cur.is_null() {
+            let it = &*cur;
+            if let Some(addr) = unsafe { it.ifa_addr.as_ref() }
+                && addr.sa_family as i32 == libc::AF_INET
+                && it.ifa_flags & libc::IFF_UP as u32 != 0
+                && it.ifa_flags & libc::IFF_LOOPBACK as u32 == 0
+            {
+                let sa = addr as *const libc::sockaddr as *const libc::sockaddr_in;
+                let ip = std::net::Ipv4Addr::from(u32::from_be(unsafe { (*sa).sin_addr.s_addr }));
+                if usable_lan_ip(ip) {
+                    out.push(ip);
+                }
+            }
+            cur = it.ifa_next;
+        }
+        libc::freeifaddrs(list);
+    }
+    out
+}
+
 #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 fn os_name() -> String {
     std::env::consts::OS.to_string()
@@ -164,5 +271,15 @@ mod tests {
             Some("Arch Linux")
         );
         assert_eq!(super::parse_os_release(""), None);
+    }
+}
+
+#[cfg(test)]
+mod lan_tests {
+    #[test]
+    fn lists_lan_ips() {
+        let ips = super::lan_ips();
+        println!("本机局域网地址: {ips:?}");
+        assert!(!ips.is_empty(), "至少应该枚举出一块网卡的地址");
     }
 }

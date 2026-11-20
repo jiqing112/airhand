@@ -67,6 +67,10 @@ windows = { version = "0.62", features = [
   "Win32_Security_Cryptography",
   "Win32_System_Performance",
   "Win32_System_Registry",
+  # 本机的局域网地址（sysinfo::lan_ips，主界面信息条的倒三角里全列出来）
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_NetworkManagement_Ndis",
+  "Win32_Networking_WinSock",
   "Win32_System_DataExchange",
   "Win32_System_LibraryLoader",
   "Win32_System_Com",

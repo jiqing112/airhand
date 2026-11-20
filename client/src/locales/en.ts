@@ -90,6 +90,7 @@ const en: Record<MsgKey, Msg> = {
   "connect.localCodeChange": "Change",
   "connect.localShow": "Show password",
   "connect.localHide": "Hide password",
+  "connect.localAddrs": "All local LAN addresses",
   "connect.target": "Control code or IP address",
   "connect.prefer": "Prefers {codec}",
   "connect.busy": "Connecting…",

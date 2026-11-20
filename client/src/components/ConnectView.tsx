@@ -15,7 +15,7 @@ import { store, useSession, useStore } from "../lib/store";
 
 /** 这些问题要用户输入配对码（对方的身份变了也是：重新配对才认新的身份） */
 const PAIRING_PROBLEMS = new Set(["pairingRequired", "pairingFailed", "pairingUnavailable", "hostKeyChanged"]);
-import { IconBolt, IconCheck, IconClose, IconCopy, IconEye, IconEyeOff, IconMonitor, IconPencil, IconRefresh, IconSearch, IconWarn } from "./Icons";
+import { IconBolt, IconCheck, IconChevron, IconClose, IconCopy, IconEye, IconEyeOff, IconMonitor, IconPencil, IconRefresh, IconSearch, IconWarn } from "./Icons";
 import { Logo } from "./Logo";
 
 export function ConnectView() {
@@ -89,6 +89,27 @@ export function ConnectView() {
 
   /** 本机连接密码：设置里改过之后以它为准，否则用后控端发布过来的那个 */
   const localPw = regenerated ?? app?.pairingCode ?? null;
+
+  /** 本机全部局域网地址（不止一块网卡 / 虚拟机走虚拟网卡网段时不止一条）：多于一条才有倒三角 */
+  const allLanAddrs = app?.lanAddresses && app.lanAddresses.length > 1 ? app.lanAddresses : undefined;
+  const [addrsOpen, setAddrsOpen] = useState(false);
+  const addrsRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!addrsOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!addrsRef.current?.contains(e.target as Node)) setAddrsOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && setAddrsOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [addrsOpen]);
+  useEffect(() => {
+    if (!allLanAddrs) setAddrsOpen(false);
+  }, [allLanAddrs]);
 
   /** 随机生成新的连接密码：后控端立刻生效，本界面马上显示新的（默认展开给用户核对） */
   const regenerate = () => {
@@ -216,6 +237,26 @@ export function ConnectView() {
             <span className="set-title">{t("connect.local")}</span>
             <span className="mono">{app.lanAddr}</span>
             <LocalCopy text={app.lanAddr} />
+            {allLanAddrs && (
+              <div className="nt-addrs-wrap" ref={addrsRef}>
+                <button
+                  className={`icon-btn subtle ${addrsOpen ? "open" : ""}`}
+                  title={t("connect.localAddrs")}
+                  aria-label={t("connect.localAddrs")}
+                  aria-expanded={addrsOpen}
+                  onClick={() => setAddrsOpen((v) => !v)}
+                >
+                  <IconChevron size={14} />
+                </button>
+                {addrsOpen && (
+                  <div className="nt-addrs" role="listbox" aria-label={t("connect.localAddrs")}>
+                    {allLanAddrs.map((addr) => (
+                      <AddrCopyRow key={addr} addr={addr} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           {localPw && (
             <div className="nt-local-row">
@@ -285,6 +326,26 @@ function LocalCopy({ text }: { text: string }) {
       aria-label="copy"
       onClick={() => void navigator.clipboard?.writeText(text).then(() => setDone(true), () => {})}
     >
+      {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
+    </button>
+  );
+}
+
+/** 倒三角下拉里的一行：点一下复制这个地址，图标变成对勾 */
+function AddrCopyRow({ addr }: { addr: string }) {
+  const [done, setDone] = useState(false);
+  useEffect(() => {
+    if (!done) return;
+    const timer = window.setTimeout(() => setDone(false), 1500);
+    return () => clearTimeout(timer);
+  }, [done]);
+  return (
+    <button
+      className={`nt-addrs-row ${done ? "done" : ""}`}
+      aria-label="copy"
+      onClick={() => void navigator.clipboard?.writeText(addr).then(() => setDone(true), () => {})}
+    >
+      <span className="mono">{addr}</span>
       {done ? <IconCheck size={13} /> : <IconCopy size={13} />}
     </button>
   );

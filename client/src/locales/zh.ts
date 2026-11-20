@@ -94,6 +94,7 @@ export default {
   "connect.localCodeChange": "更换",
   "connect.localShow": "显示密码",
   "connect.localHide": "隐藏密码",
+  "connect.localAddrs": "本机的全部局域网地址",
   "connect.target": "控制码或 IP 地址",
   "connect.prefer": "优先使用 {codec}",
   "connect.busy": "正在连接…",

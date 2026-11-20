@@ -434,6 +434,9 @@ struct AppInfo {
     lan_port: u16,
     /// 局域网直连正在监听的实际地址（开着 [lan] 且被控端在跑时有效；主界面显示给对方看）
     lan_addr: Option<String>,
+    /// 本机全部能被连的局域网地址（多网卡 / 虚拟网卡各一个，第一个是主界面默认显示的；
+    /// 主界面点倒三角展开，点一下复制一条）
+    lan_addresses: Vec<String>,
     /// 本机的连接密码（配对码；access = Pairing 时才有，主界面可显示 / 隐藏）
     pairing_code: Option<String>,
     /// 本机的控制码（连上服务器时有效；主界面显示 + 更换）
@@ -446,23 +449,38 @@ struct AppInfo {
 }
 
 fn app_info(hub: &StatusHub) -> AppInfo {
+    let lan_addr = hub.borrow().host.lan.map(|a| a.to_string()).or_else(|| {
+        // 首次启动的竞态：监听器刚绑好、地址还在路上；配置开着就现场探测一次
+        config::settings()
+            .lan
+            .listen
+            .then(|| {
+                airhand_link::direct::local_lan_ip()
+                    .map(|ip| std::net::SocketAddr::new(ip, config::settings().lan.port).to_string())
+            })
+            .flatten()
+    });
+    // 全部网卡各配一个（探测出来的那个排最前）：别的设备未必和主机在同一网段，
+    // 虚拟机要从虚拟网卡的地址连过来（主界面点倒三角展开）
+    let mut lan_addresses = Vec::new();
+    if let Some(primary) = &lan_addr {
+        lan_addresses.push(primary.clone());
+        let port = config::settings().lan.port;
+        for ip in sysinfo::lan_ips() {
+            let addr = std::net::SocketAddr::new(ip.into(), port).to_string();
+            if !lan_addresses.contains(&addr) {
+                lan_addresses.push(addr);
+            }
+        }
+    }
     AppInfo {
         version: config::VERSION,
         server: config::settings().server.clone(),
         server_fp: config::settings().server_fp.clone(),
         lan_listen: config::settings().lan.listen,
         lan_port: config::settings().lan.port,
-        lan_addr: hub.borrow().host.lan.map(|a| a.to_string()).or_else(|| {
-            // 首次启动的竞态：监听器刚绑好、地址还在路上；配置开着就现场探测一次
-            config::settings()
-                .lan
-                .listen
-                .then(|| {
-                    airhand_link::direct::local_lan_ip()
-                        .map(|ip| std::net::SocketAddr::new(ip, config::settings().lan.port).to_string())
-                })
-                .flatten()
-        }),
+        lan_addr,
+        lan_addresses,
         pairing_code: hub.borrow().host.pairing.clone(),
         code: hub.borrow().host.code.map(airhand_proto::format_code),
         pinned: config::pinned(),

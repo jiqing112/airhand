@@ -130,6 +130,8 @@ export interface AppInfo {
   lanPort?: number;
   /** 正在监听的实际地址（IP:端口，主界面显示给对方看）；没开监听 / 被控端没在跑时没有 */
   lanAddr?: string | null;
+  /** 本机全部能被连的局域网地址（多网卡 / 虚拟网卡各一个，第一个和 lanAddr 相同；网页版没有） */
+  lanAddresses?: string[];
   /** 本机的连接密码（配对码）：主界面可显示 / 隐藏 */
   pairingCode?: string | null;
   /** 本机的控制码（连上服务器时有效）：主界面可显示 / 更换 */

@@ -71,6 +71,24 @@ npm run tauri build
 - C 运行时是静态链接的，不需要装 VC++ 运行库
 - Media Foundation 是延迟加载的，Windows N 版（没装媒体功能包）也能运行，会改用软件编码
 
+### Windows 上用 GNU 工具链开发 / 测试
+
+CI 用 MSVC 构建 Windows 版，本机只有 GNU 工具链（rustup 的 `x86_64-pc-windows-gnu`）时也能完整开发、跑测试，需要：
+
+- Rust：`rustup toolchain install stable-x86_64-pc-windows-gnu`（或直接设为默认工具链）
+- MinGW：安装 [MSYS2](https://www.msys2.org)，在它的终端里 `pacman -S mingw-w64-x86_64-gcc`（gcc 会带上 binutils 的 as / dlltool / windres 和 winpthreads），并把 `…\msys64\mingw64\bin` 加进 PATH（放在 Git 自带的 `mingw64\bin` 前面）
+- CMake 和 Ninja（编译 libopus）：`pacman -S mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja`，或者用官方安装包
+
+之后和上面一样 `npm run tauri build`、`cargo test`。常见报错对照：
+
+| 报错 | 原因 |
+|---|---|
+| `error calling dlltool 'dlltool.exe': program not found`（编译 windows-sys 等 crate 时） | PATH 上没有 binutils：装 MSYS2 的 gcc |
+| 客户端构建脚本 panic：`NotAttempted("windres")` | windres 也在 binutils 里，同上 |
+| 链接报 `cannot find -l:libpthread.a` | 只装了 binutils、没装 winpthreads：装完整的 MSYS2 gcc |
+| 测试 / 示例程序一启动就报 `STATUS_ENTRYPOINT_NOT_FOUND`（0xC0000139） | 它们的可执行文件没有嵌 manifest，comctl32 被绑到 5.82；GNU 工具链下 `build.rs` 会用 embed-resource 给它们嵌上 `client/src-tauri/windows/tests.rc`（tauri-build 只给 bin 目标嵌），正常情况下不会再遇到 |
+| PATH 上有 Git 自带的 `mingw64\bin` 时，程序加载旧版 `libstdc++-6.dll` 报入口点错误 | 让 MSYS2 的 `mingw64\bin` 排在 PATH 更前面；或者把新版 `libstdc++-6.dll`、`libgcc_s_seh-1.dll`、`libwinpthread-1.dll` 放到 exe 旁边 |
+
 ### macOS 说明
 
 - 只要 .app 时用 `npm run tauri build -- --bundles app`；构建的是本机的架构（Apple 芯片是 arm64）

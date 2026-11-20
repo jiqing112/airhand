@@ -71,6 +71,24 @@ The output is under `client/src-tauri/target/release/`:
 - The C runtime is statically linked, so the VC++ redistributable isn't needed
 - Media Foundation is delay-loaded, so Windows N editions (without the Media Feature Pack) still run and use software encoding
 
+### Developing and testing on Windows with the GNU toolchain
+
+CI builds Windows with MSVC. A machine with only the GNU toolchain (rustup's `x86_64-pc-windows-gnu`) can still build and run tests with full functionality; you need:
+
+- Rust: `rustup toolchain install stable-x86_64-pc-windows-gnu` (or make it the default toolchain)
+- MinGW: install [MSYS2](https://www.msys2.org), run `pacman -S mingw-w64-x86_64-gcc` in its shell (gcc brings the binutils as / dlltool / windres and winpthreads), and add `…\msys64\mingw64\bin` to PATH (ahead of Git's own `mingw64\bin`)
+- CMake and Ninja (for libopus): `pacman -S mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja`, or the official installers
+
+Then build and test as above (`npm run tauri build`, `cargo test`). Common errors:
+
+| Error | Cause |
+|---|---|
+| `error calling dlltool 'dlltool.exe': program not found` (while compiling windows-sys etc.) | no binutils on PATH: install MSYS2's gcc |
+| client build script panics: `NotAttempted("windres")` | windres is in binutils too, same as above |
+| link error `cannot find -l:libpthread.a` | binutils without winpthreads: install the full MSYS2 gcc |
+| test / example executables die at startup with `STATUS_ENTRYPOINT_NOT_FOUND` (0xC0000139) | their executables had no embedded manifest, so comctl32 got bound to 5.82; under the GNU toolchain, `build.rs` embeds `client/src-tauri/windows/tests.rc` via embed-resource for them (tauri-build only covers bin targets) — you should not hit this anymore |
+| with Git's own `mingw64\bin` on PATH, freshly linked programs fail to load an old `libstdc++-6.dll` | put MSYS2's `mingw64\bin` earlier on PATH; or place fresh `libstdc++-6.dll`, `libgcc_s_seh-1.dll`, `libwinpthread-1.dll` next to the exe |
+
 ### macOS notes
 
 - For just the .app use `npm run tauri build -- --bundles app`; it is built for the machine's own architecture (arm64 on Apple silicon)

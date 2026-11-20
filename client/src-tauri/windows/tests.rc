@@ -1,0 +1,4 @@
+// 测试和示例的可执行文件的 manifest（见 ../build.rs）：只需要声明 Common-Controls v6，
+// 让加载器把 comctl32.dll 绑到 6.x（任务对话框、托盘……的入口点只在 v6 里有）。
+// 资源类型 24 = RT_MANIFEST，ID 1 = CREATEPROCESS_MANIFEST_RESOURCE_ID。
+1 24 "tests.manifest.xml"

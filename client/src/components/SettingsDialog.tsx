@@ -17,8 +17,12 @@ export function SettingsDialog() {
   const open = useStore((s) => s.settings);
   const web = api.kind === "web";
   const close = () => store.setSettings(null);
-  // 打开时带的节（齿轮 = 服务器，局域网信息条的"修改" = 局域网直连）；之后的切换在本地
-  const [section, setSection] = useState<SettingsSection>(open ?? "server");
+  const [section, setSection] = useState<SettingsSection>("server");
+  // 打开时定位到请求的节（齿轮 = 服务器，局域网信息条的"修改" = 局域网直连）；打开之后的切换在本地。
+  // 组件是常驻挂载的（关闭只是不渲染），useState 的初始值不会跟着打开入口变，要在打开时同步
+  useEffect(() => {
+    if (open) setSection(open);
+  }, [open]);
 
   // Esc 关闭
   useEffect(() => {

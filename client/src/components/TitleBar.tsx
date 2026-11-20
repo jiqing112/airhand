@@ -162,9 +162,13 @@ function TabStrip() {
           {sessions.length > 0 && <CloseButton view="new" title={t("tabs.closeDraft")} />}
         </div>
       )}
-      <button className="tab-add" title={t("tabs.newTip")} onMouseDown={keepFocus} onClick={store.newTab}>
-        <IconPlus size={16} />
-      </button>
+      {/* 没有会话时它无事可做（唯一的标签就是新建连接，当前就在上面），不显示；
+       * 有会话时点它切回新建连接页，开下一个连接 */}
+      {sessions.length > 0 && (
+        <button className="tab-add" title={t("tabs.newTip")} onMouseDown={keepFocus} onClick={store.newTab}>
+          <IconPlus size={16} />
+        </button>
+      )}
     </div>
   );
 }

@@ -513,7 +513,7 @@ async fn controller_service_waits_for_the_host() {
             r => break r,
         }
     };
-    let token = Some(first.unwrap().resume);
+    let token = first.unwrap().resume;
 
     host_conn.close(VarInt::from_u32(0), b"");
     wait_until("the host is gone", || broker.stats().0 == 0).await;
@@ -899,6 +899,7 @@ async fn host_service_rekeys_on_kick_all() {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let task = tokio::spawn(airhand_link::host::run(
         Arc::new(cfg.clone()),
+        None,
         true,
         None,
         Arc::new(Events(tx)),
@@ -957,6 +958,7 @@ async fn host_service_retries_an_unanswered_rekey() {
     // 不保存控制码的被控端
     let task = tokio::spawn(airhand_link::host::run(
         Arc::new(cfg),
+        None,
         false,
         None,
         Arc::new(Events),

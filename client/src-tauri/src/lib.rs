@@ -54,6 +54,9 @@ use status::{HostStatus, Mode, StatusHub};
 const CONSOLE: &str = "main";
 
 /// 正在退出（或卸载）：关掉控制台时不再切回被控端（见 [`on_console_destroyed`]）
+/// "设置 → 立即重启"正在重启系统服务：AgentLink 的 on_stopped 不要把托盘退出
+pub(crate) static RESTARTING: AtomicBool = AtomicBool::new(false);
+
 static EXITING: AtomicBool = AtomicBool::new(false);
 
 pub struct AppState {
@@ -701,15 +704,21 @@ async fn change_control_code(state: tauri::State<'_, AppState>) -> Result<(), Pr
 /// 设置改完立即重启（托盘进程重新读配置；Windows 安装版先重启系统服务里的被控端）
 #[tauri::command]
 async fn restart_app(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), Problem> {
-    // 服务里的被控端读的是启动时的配置：停了再启，两个进程都拿到新地址
+    // 服务里的被控端读的是启动时的配置：停稳、再启动，两个进程都拿到新配置。
+    // 停服务会让 AgentLink 的 on_stopped 触发（托盘平时跟着退出）——RESTARTING 压住它，
+    // 服务起来之后 app.restart() 再重启托盘进程
     #[cfg(windows)]
     if state.service_mode {
-        let _ = tauri::async_runtime::spawn_blocking(|| -> anyhow::Result<()> {
-            winsvc::stop()?;
-            winsvc::start()?;
-            Ok(())
+        RESTARTING.store(true, Ordering::Release);
+        let restarted = tauri::async_runtime::spawn_blocking(|| -> anyhow::Result<()> {
+            winsvc::restart()
         })
         .await;
+        match restarted {
+            Ok(Ok(())) => info!("the Airhand service restarted for the new settings"),
+            Ok(Err(e)) => warn!("can't restart the Airhand service: {e:#}"),
+            Err(e) => warn!("can't restart the Airhand service: {e}"),
+        }
     }
     let _ = &state;
     app.restart();
@@ -1011,6 +1020,12 @@ fn start_service_link(app: &AppHandle, hub: &StatusHub) -> Hosting {
     drop(winsvc::clip::start_tray());
     let app = app.clone();
     Hosting::Service(winsvc::ipc::AgentLink::start(hub.clone(), move || {
+        // "设置 → 立即重启"也会停服务：那是我们自己发起的重启，托盘不能跟着退出
+        //（退出的话服务停了就没人再启动，被控端整个没了）
+        if RESTARTING.load(Ordering::Acquire) {
+            info!("the Airhand service stopped for a restart, keeping the console alive");
+            return;
+        }
         app.exit(0)
     }))
 }

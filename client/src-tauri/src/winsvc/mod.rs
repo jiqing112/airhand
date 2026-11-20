@@ -294,6 +294,18 @@ pub fn stop() -> Result<()> {
     }
 }
 
+/// 重启服务：停稳之后再启动（设置改完了要被控端重新读配置）。给"设置 → 立即重启"用的
+pub fn restart() -> Result<()> {
+    let Some(svc) = open_service(SERVICE_STOP | SERVICE_START)? else {
+        return Ok(());
+    };
+    stop_and_wait(&svc, Duration::from_secs(10))?;
+    match unsafe { StartServiceW(svc.0, None) } {
+        Err(e) if e.code() == ERROR_SERVICE_ALREADY_RUNNING.to_hresult() => Ok(()),
+        r => r.context("StartService"),
+    }
+}
+
 /// 停止服务并等它停下来
 fn stop_and_wait(svc: &Sc, timeout: Duration) -> Result<()> {
     let mut st = SERVICE_STATUS::default();

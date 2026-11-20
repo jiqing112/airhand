@@ -7,6 +7,7 @@
 //! * 被控端 → 托盘：[`AgentStatus`]，连上时发一次，之后有变化就发；
 //! * 托盘 → 被控端：[`ToAgent`]。
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -409,6 +410,13 @@ async fn run(
         .await
         .unwrap_or((super::State::Running, my_session()));
         if seen_running && matches!(state, super::State::Missing | super::State::Stopped) {
+            // "设置 → 立即重启"主动停的服务：等它起来继续（托盘不能退出——退出的话就没人重启它了）
+            if crate::RESTARTING.load(Ordering::Acquire) {
+                info!("the Airhand service stopped for a restart, waiting for it to come back");
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                seen_running = false;
+                continue;
+            }
             info!(?state, "the Airhand service stopped");
             on_stopped();
             return;
